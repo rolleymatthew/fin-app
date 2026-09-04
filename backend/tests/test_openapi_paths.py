@@ -34,8 +34,8 @@ EXPECTED_PATHS = {
     "/api/hk/one",
     # /health
     "/health",
-    # /check （本 task 末会被搬进 main.py，路径保留）
-    "/check",
+    # /api/check （搬到 main.py 后路径前缀不变，保持与 baseline 一致）
+    "/api/check",
 }
 
 

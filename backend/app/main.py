@@ -52,7 +52,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/check")
+@app.get("/api/check")
 async def check_finance_data(
     date: list[str] = Query(...),
     code: list[str] | None = Query(default=None),
