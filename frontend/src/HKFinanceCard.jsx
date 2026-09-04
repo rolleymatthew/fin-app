@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import HKStockCombobox from './HKStockCombobox';
 import { PRESET_HK_CODES } from './const';
+import { apiGet, ApiError } from './api';
 
 const styles = {
   card: {
@@ -121,13 +122,13 @@ const HKFinanceCard = () => {
   const fetchOne = async (code, name) => {
     const url = `/api/hk/one?code=${encodeURIComponent(code)}&name=${encodeURIComponent(name || '')}`;
     try {
-      const res = await fetch(url);
-      const data = await res.json().catch(() => ({}));
-      if (data && data.code === 200) {
-        return { ok: true, code, name };
-      }
-      return { ok: false, code, name, message: data?.message || `HTTP ${res.status}` };
+      await apiGet(url);
+      return { ok: true, code, name };
     } catch (err) {
+      if (err instanceof ApiError) {
+        console.warn('[api]', err.errorType, err.path, err.code, err.message);
+        return { ok: false, code, name, message: err.message };
+      }
       return { ok: false, code, name, message: String(err) };
     }
   };

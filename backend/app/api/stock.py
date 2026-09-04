@@ -145,7 +145,7 @@ async def get_hk_one(
     ok, msg = await hk_service.export_hk_fin_2_excle(code, name)
     if ok:
         return ResultVO.ok({"code": code, "name": name, "path": msg}).model_dump()
-    return ResultVO.build(status=500, msg=msg, data={"code": code, "name": name}).model_dump()
+    return ResultVO.fail(code=500, message=msg, data={"code": code, "name": name}).model_dump()
 
 
 @router.get("/etf/get")

@@ -12,6 +12,8 @@ from app.api.sec_code import router as sec_code_router
 from app.api.stock import router as stock_router
 from app.config import get_settings
 from app.db import ensure_indexes
+from app.exception_handlers.result_envelope import register_result_exception_handlers
+from app.middleware.result_envelope import ResultEnvelopeMiddleware
 from app.models.result import ResultVO
 from app.services.finance_service import FinanceService
 
@@ -32,6 +34,9 @@ if _debug_url not in {"1", "true", "yes", "y", "on"}:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app = FastAPI(title=settings.app_name)
+
+app.add_middleware(ResultEnvelopeMiddleware)
+register_result_exception_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,7 +69,7 @@ async def check_finance_data(
         for d in date:
             if not await finance_service.has_fin_data(s, d):
                 missing.append(f"{s.securityCode},{d}")
-    return ResultVO.build(1, "缺少财务数据", missing).model_dump()
+    return ResultVO.fail(code=1, message="缺少财务数据", data=missing).model_dump()
 
 
 WEB_DIR = os.environ.get("WEB_DIR", "/app/web/dist")

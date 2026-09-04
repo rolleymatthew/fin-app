@@ -79,7 +79,7 @@ async def refresh_kline(code: int = Query(...)):
     market = spider.market_code(code)
     entity = await kline_service.refresh_kline_data(str(code), market, name=None)
     if entity is None:
-        return ResultVO.build(1, "全量重抓失败或返回为空，请检查 code / 网络", None)
+        return ResultVO.fail(code=1, message="全量重抓失败或返回为空，请检查 code / 网络")
     return ResultVO.ok(
         {
             "code": entity.code,

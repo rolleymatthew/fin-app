@@ -197,7 +197,7 @@ async def get_etf_quarter(code: list[str] = Query(...)):
     etf_service, _, _, _ = _services()
     codes = _normalize_codes(code)
     if not codes:
-        return ResultVO.build(-1, "code 参数必填").model_dump()
+        return ResultVO.fail(code=-1, message="code 参数必填").model_dump()
 
     # 优先使用 etf collection 中的 secName
     name_map = {}
@@ -218,6 +218,6 @@ async def get_etf_quarter_history(code: str = Query(...)):
     """查询某只 ETF 的季度历史数据"""
     etf_service, _, _, _ = _services()
     if not code.isdigit():
-        return ResultVO.build(-1, "code 必须是数字").model_dump()
+        return ResultVO.fail(code=-1, message="code 必须是数字").model_dump()
     history = await etf_service.get_quarter_history(int(code))
     return ResultVO.ok(history).model_dump()

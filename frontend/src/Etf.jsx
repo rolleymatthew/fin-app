@@ -4,6 +4,7 @@ import ReactECharts from 'echarts-for-react';
 import { ETF_CODES, PRESET_STOCK_CODES } from './const';
 import StockCombobox from './StockCombobox';
 import HKFinanceCard from './HKFinanceCard';
+import { apiGet, apiPost, ApiError } from './api';
 
 const Page = () => {
   const [data, setData] = useState([]);
@@ -158,16 +159,20 @@ const Page = () => {
     const url = `/api/etf?days=${daysValue}&code=${uniqueEtfCodes.join(',')}&with_kline=true&with_quarter=true`;
 
     try {
-      const response = await fetch(url);
-      const data = await response.json();
+      const data = await apiGet(url);
       console.log(`ETF List Data (days=${daysValue}):`, data);
       alert(
-        `成功调用后台接口（日度 ${data?.data?.daily ?? '?'} 条 / 季度 ${data?.data?.quarter ?? '?'} 条）：\n${url}`
+        `成功调用后台接口（日度 ${data?.daily ?? '?'} 条 / 季度 ${data?.quarter ?? '?'} 条）：\n${url}`
       );
       setEtfDataVersion((v) => v + 1);
     } catch (error) {
-      console.error(`Failed to fetch ETF list data (days=${daysValue}):`, error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error(`Failed to fetch ETF list data (days=${daysValue}):`, error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -184,14 +189,18 @@ const Page = () => {
     const url = `/api/etf?days=${daysValue}${codeParam}&with_kline=true&with_quarter=true`;
 
     try {
-      const response = await fetch(url);
-      const customData = await response.json();
-      console.log('Custom ETF Data (days):', customData);
+      const data = await apiGet(url);
+      console.log('Custom ETF Data (days):', data);
       alert('成功调用后台接口：' + url);
       setEtfDataVersion((v) => v + 1);
     } catch (error) {
-      console.error('Failed to fetch custom ETF data (days):', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to fetch custom ETF data (days):', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -205,18 +214,21 @@ const Page = () => {
 
   const handleFetchSzseSync = async () => {
     try {
-      const response = await fetch('/api/etf/szse/sync', { method: 'POST' });
-      const result = await response.json();
-      const data = result?.data;
-      const message = data?.message ?? JSON.stringify(result);
-      console.log('SZSE sync:', result);
+      const data = await apiPost('/api/etf/szse/sync');
+      const message = data?.message ?? JSON.stringify(data);
+      console.log('SZSE sync:', data);
       alert(message);
       if (!data?.skipped) {
         setEtfDataVersion((v) => v + 1);
       }
     } catch (error) {
-      console.error('Failed to sync SZSE ETF data:', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to sync SZSE ETF data:', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -238,13 +250,17 @@ const Page = () => {
     }
 
     try {
-      const response = await fetch(url);
-      const stockData = await response.json();
-      console.log('Stock Data:', stockData);
+      await apiGet(url);
+      console.log('Stock Data fetched:', url);
       alert('成功调用后台接口：' + url);
     } catch (error) {
-      console.error('Failed to fetch stock data:', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to fetch stock data:', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -255,13 +271,17 @@ const Page = () => {
     }
     const url = `/api/one?code=${codes.join(',')}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
     try {
-      const response = await fetch(url);
-      const stockData = await response.json();
-      console.log('Batch Stock Data:', stockData);
+      await apiGet(url);
+      console.log('Batch Stock Data fetched:', url);
       alert('成功调用后台接口：' + url);
     } catch (error) {
-      console.error('Failed to fetch batch stock data:', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to fetch batch stock data:', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -305,15 +325,14 @@ const Page = () => {
     let failCount = 0;
     for (const code of codes) {
       try {
-        const response = await fetch(`/api/kline/refresh?code=${code}`, { method: 'POST' });
-        const data = await response.json();
-        if (data.code === 200) {
-          successCount += 1;
-        } else {
-          failCount += 1;
-        }
+        await apiPost(`/api/kline/refresh?code=${code}`);
+        successCount += 1;
       } catch (error) {
-        console.error('Failed to refresh kline:', error);
+        if (error instanceof ApiError) {
+          console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        } else {
+          console.error('Failed to refresh kline:', error);
+        }
         failCount += 1;
       }
     }
@@ -341,13 +360,17 @@ const Page = () => {
     const url = `/api/one?keepon_code=${keeponCode}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
 
     try {
-      const response = await fetch(url);
-      const stockData = await response.json();
-      console.log('Resume Stock Data:', stockData);
+      await apiGet(url);
+      console.log('Resume Stock Data fetched:', url);
       alert('成功调用断点续传接口：' + url);
     } catch (error) {
-      console.error('Failed to resume stock data:', error);
-      alert('调用断点续传接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to resume stock data:', error);
+        alert('调用断点续传接口失败！');
+      }
     }
   };
 
@@ -355,19 +378,18 @@ const Page = () => {
     const confirmed = confirm('将拉取上交所/深交所官方列表并补齐缺失股票，继续吗？');
     if (!confirmed) return;
     try {
-      const response = await fetch('/api/sec/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: false }),
-      });
-      const result = await response.json();
-      const d = result?.data || {};
+      const d = await apiPost('/api/sec/sync', { force: false });
       alert(
         `同步完成：官方 ${d.total_in_official ?? '?'} / 新增 ${d.new_added ?? '?'} / 变更 ${d.state_changed ?? '?'} / 回填 ${d.details_refilled ?? '?'} / 失败 ${(d.failed || []).length}`
       );
     } catch (error) {
-      console.error('Failed to sync sec_code:', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to sync sec_code:', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 
@@ -375,17 +397,16 @@ const Page = () => {
     const confirmed = confirm('将全量重拉所有股票详情（含退市/ST），耗时较长，继续吗？');
     if (!confirmed) return;
     try {
-      const response = await fetch('/api/sec/refresh-details', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ include_delisted: true, only_missing: false }),
-      });
-      const result = await response.json();
-      const d = result?.data || {};
+      const d = await apiPost('/api/sec/refresh-details', { include_delisted: true, only_missing: false });
       alert(`全量更新完成：回填 ${d.details_refilled ?? '?'} / 失败 ${(d.failed || []).length}`);
     } catch (error) {
-      console.error('Failed to refresh details:', error);
-      alert('调用后台接口失败！');
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to refresh details:', error);
+        alert('调用后台接口失败！');
+      }
     }
   };
 

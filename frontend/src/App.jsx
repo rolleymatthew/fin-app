@@ -280,7 +280,6 @@ function App() {
 
   return (
     <div className="App">
-      <h1>ECharts K 线图示例</h1>
       {/* 使用 ref 绑定 DOM 元素 */}
       <div ref={chartRef} style={{ width: '100%', height: '600px' }} />
     </div>

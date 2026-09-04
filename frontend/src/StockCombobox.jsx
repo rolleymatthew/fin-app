@@ -4,6 +4,7 @@
 // 0 外部依赖，纯手写（input + 浮层 + 键盘导航）。
 /* eslint-disable react/prop-types */
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { apiGet, ApiError } from './api';
 
 const DEFAULT_DEBOUNCE = 200;
 const DEFAULT_LIMIT = 200;
@@ -106,18 +107,20 @@ const StockCombobox = ({
       setLoading(true);
       const myId = ++reqIdRef.current;
       const url = `${apiUrl}?limit=${limit}` + (q ? `&q=${encodeURIComponent(q)}` : '');
-      fetch(url)
-        .then((r) => r.json())
-        .then((json) => {
+      apiGet(url)
+        .then((rows) => {
           if (myId !== reqIdRef.current) return; // 过期响应丢弃
-          const rows = (json && json.data) || [];
-          cacheRef.current.set(cacheKey, rows);
-          setItems(rows);
+          const list = Array.isArray(rows) ? rows : [];
+          cacheRef.current.set(cacheKey, list);
+          setItems(list);
           setHighlightIdx(0);
           setLoading(false);
         })
-        .catch(() => {
+        .catch((err) => {
           if (myId !== reqIdRef.current) return;
+          if (err instanceof ApiError) {
+            console.warn('[api]', err.errorType, err.path, err.code, err.message);
+          }
           setItems([]);
           setHighlightIdx(0);
           setLoading(false);

@@ -1,27 +1,65 @@
-from typing import Any, ClassVar, Generic, TypeVar
+"""统一响应包装。8 字段契约见 docs/superpowers/specs/2026-09-04-fin-app-extract-design.md §4.3。"""
+from __future__ import annotations
+
+import time
+from typing import Any
+
 from pydantic import BaseModel
 
 
-T = TypeVar("T")
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
 
-class ResultVO(BaseModel, Generic[T]):
-    RESULT_CODE_SUCCESS: ClassVar[int] = 200
-    RESULT_CODE_FAILURE: ClassVar[int] = -1
-
-    code: int | None = None
-    msg: str | None = None
+class ResultVO(BaseModel):
+    success: bool
+    code: int = 0
+    message: str = "ok"
     data: Any | None = None
-    count: int | None = None
-    ids: list[int] | None = None
+    timestamp: int = 0
+    path: str = ""
+    durationMs: int = 0
+    errorType: str | None = None
 
     @classmethod
-    def build(cls, status: int, msg: str, data: Any | None = None):
-        return cls(code=status, msg=msg, data=data)
+    def ok(
+        cls,
+        data: Any | None = None,
+        *,
+        path: str = "",
+        durationMs: int = 0,
+    ) -> "ResultVO":
+        return cls(
+            success=True,
+            code=0,
+            message="ok",
+            data=data,
+            timestamp=_now_ms(),
+            path=path,
+            durationMs=durationMs,
+        )
 
     @classmethod
-    def ok(cls, data: Any | None = None):
-        return cls(code=cls.RESULT_CODE_SUCCESS, msg="成功", data=data)
+    def fail(
+        cls,
+        code: int,
+        message: str,
+        *,
+        errorType: str = "business",
+        path: str = "",
+        durationMs: int = 0,
+        data: Any | None = None,
+    ) -> "ResultVO":
+        return cls(
+            success=False,
+            code=code,
+            message=message,
+            data=data,
+            timestamp=_now_ms(),
+            path=path,
+            durationMs=durationMs,
+            errorType=errorType,
+        )
 
-    def success(self) -> bool:
-        return self.code == self.RESULT_CODE_SUCCESS
+    def model_dump(self, **kwargs):
+        return super().model_dump(**kwargs)
