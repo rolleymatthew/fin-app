@@ -1,1 +1,25 @@
-.superpowers/
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.log
+build/
+dist/
+
+# Node
+node_modules/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local artifacts
+my-app.exe
+fin-service.exe
+app.log
+urlLogs.log
