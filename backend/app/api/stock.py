@@ -156,4 +156,5 @@ async def get_etf_by_code(code: int = Query(...)):
     响应: {"data": [...日度], "quarterly": [...季度]}
     """
     etf_service, _, _, _ = _services()
-    return await etf_service.get_etf_with_quarterly(code)
+    payload = await etf_service.get_etf_with_quarterly(code)
+    return ResultVO.ok(payload).model_dump()

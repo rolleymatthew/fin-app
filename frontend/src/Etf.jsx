@@ -38,8 +38,8 @@ const Page = () => {
       }
 
       const [etfResponse, kineResponse] = await Promise.all([
-        fetch('/api/etf/get?code=' + codeToFetch).then((response) => response.json()),
-        fetch('/api/kline/get?code=' + codeToFetch).then((response) => response.json()),
+        apiGet('/api/etf/get?code=' + codeToFetch),
+        apiGet('/api/kline/get?code=' + codeToFetch),
       ]);
 
       // 每次图表更新，把当前 ETF 的代码同步到输入框

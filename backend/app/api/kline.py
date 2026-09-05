@@ -64,7 +64,8 @@ async def get_kline_by_code(
     end: str | None = Query(default=None),
 ):
     _, kline_service, _, _ = _services()
-    return await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
+    entity = await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
+    return ResultVO.ok(entity).model_dump()
 
 
 @router.post("/kline/refresh")
