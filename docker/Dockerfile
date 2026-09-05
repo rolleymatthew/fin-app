@@ -10,7 +10,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS frontend-builder
 WORKDIR /build
 COPY frontend/ ./
 RUN corepack enable \
- && corepack prepare pnpm@9.15.4 --activate \
+ && corepack prepare pnpm@11.7.0 --activate \
  && pnpm install --config.confirmModulesPurge=false
 RUN pnpm run build
 
