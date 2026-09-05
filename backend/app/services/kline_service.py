@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List
@@ -13,9 +14,10 @@ from app.clients.eastmoney import get_eastmoney_client
 from app.clients.kline import FQT, PERIOD, KLineRow, build_aggregator
 from app.config import get_settings
 from app.constants import spider
+from app.mappers.kline_data import quarter_of_kline
 from app.models.entities import KLineDataEntity, KLineEntity
 from app.repositories.base import MongoRepository
-from app.utils import num_utils, transform
+from app.utils import date_utils, num_utils, transform
 
 
 class KLineService:
@@ -30,20 +32,23 @@ class KLineService:
     # 全量拉取: 覆盖上市至今所有历史数据
     DEFAULT_LIMIT = 99999
 
+    # 增量窗口阈值: 超过此天数走东财全量补齐 (避免腾讯/新浪单次数据上限)
+    INC_FULL_REFILL_DAYS = 90
+
     def __init__(self):
         self.client = get_eastmoney_client()
         self.repo = MongoRepository(KLineEntity)
         settings = get_settings()
-        # 增量主源 + 回退链: ths → sina → tencent → eastmoney
+        # 增量主源 + 回退链: tencent → eastmoney → sina (env 驱动)
         self._aggregator = build_aggregator(
             primary=settings.kline_primary,
             fallbacks=settings.kline_fallbacks.split(","),
         )
-        # 全量主源 + 回退链: eastmoney → ths → sina → tencent
+        # 全量主源 + 回退链: eastmoney → sina → tencent
         # 全量抓取覆盖历史最全, 东财字段最完整
         self._full_aggregator = build_aggregator(
             primary="eastmoney",
-            fallbacks=["ths", "sina", "tencent"],
+            fallbacks=["sina", "tencent"],
         )
 
     def market_code(self, secucode: str) -> int | None:
@@ -82,8 +87,35 @@ class KLineService:
             # 2) 已有历史 → 增量拉取 last_date 之后的 K 线
             #    计算从 last_date 到今天的日历天数
             limit = self._incremental_limit(last_date)
+            # 增量窗口 > 90 天 → 走东财全量补齐
+            # (腾讯/新浪接口单次上限 ~640/3248, 超过会返回空)
+            if limit > self.INC_FULL_REFILL_DAYS:
+                result = await self._full_aggregator.fetch(
+                    symbol, PERIOD.DAY, FQT.QFQ, limit=self.DEFAULT_LIMIT,
+                )
+                if not result.rows:
+                    self._log_incremental_no_data(code, last_date, limit, result)
+                    return existing
+                new_entities = self._rows_to_entities(result.rows)
+                merged = self._merge_klines(existing_klines, new_entities)
+                final_name = name or (existing.name if existing else None)
+                entity = KLineEntity(code=code, name=final_name, klines=merged)
+                # 路径标签: 区分东财直接 / 链式 fallback
+                full_path = (
+                    "incremental-full-EM" if not result.fell_back
+                    else "incremental-full-chain"
+                )
+                new_count = len([r for r in result.rows if r.date > last_date])
+                print(
+                    f"[kline] {full_path} code={code} +{new_count} rows "
+                    f"(last={last_date} → {merged[0].date if merged else '?'}) "
+                    f"source={result.source.value if result.source else 'none'}",
+                    flush=True,
+                )
+                return entity
+            # 增量窗口 <= 90 天 → 走主链聚合器 (默认腾讯主源)
             result = await self._aggregator.fetch(
-                symbol=symbol, period=PERIOD.DAY, fqt=FQT.QFQ, limit=limit,
+                symbol, PERIOD.DAY, FQT.QFQ, limit,
             )
             if not result.rows:
                 if limit <= 0:
@@ -99,14 +131,20 @@ class KLineService:
                 )
                 return existing
             new_entities = self._rows_to_entities(new_rows)
-            merged = self._merge_klines(existing_klines, new_entities)
+            # 增量路径: 防止腾讯 6 字段覆盖已有的 11 字段
+            merged = self._merge_klines(existing_klines, new_entities, prefer="existing")
             # name: 调用方传入 > DB 旧记录
             final_name = name or (existing.name if existing else None)
             entity = KLineEntity(code=code, name=final_name, klines=merged)
+            # 路径标签: 区分主源成功 / 链式 fallback
+            incr_path = (
+                "incremental-primary" if not result.fell_back
+                else "incremental-chain-fallback"
+            )
             print(
-                f"[kline] incremental code={code} +{len(new_entities)} rows "
+                f"[kline] {incr_path} code={code} +{len(new_entities)} rows "
                 f"(last={last_date} → {merged[0].date if merged else '?'}) "
-                f"source={result.source.value}",
+                f"source={result.source.value if result.source else 'none'}",
                 flush=True,
             )
             return entity
@@ -119,8 +157,15 @@ class KLineService:
             print(f"[kline] full no data code={code} source={result.source} "
                   f"error={result.error}", flush=True)
             return None
+        # 路径标签 (2026-08-26 改造): 区分东财直接 / 主链 fallback
+        full_path = (
+            "full-EM-direct"
+            if result.source and result.source.value == "eastmoney" and not result.fell_back
+            else "full-chain-fallback"
+        )
         print(
-            f"[kline] full fetch code={code} source={result.source.value} "
+            f"[kline] {full_path} code={code} "
+            f"source={result.source.value if result.source else 'none'} "
             f"rows={len(result.rows)} first={result.rows[0].date} "
             f"last={result.rows[-1].date}",
             flush=True,
@@ -238,15 +283,32 @@ class KLineService:
         self,
         existing: List[KLineDataEntity] | None,
         new_rows: List[KLineDataEntity],
+        prefer: str = "new",
     ) -> List[KLineDataEntity]:
-        """按日期去重合并: 已有的保留, 新来的覆盖同日期, 按日期降序."""
+        """按日期去重合并.
+
+        prefer="new" (默认): 新数据覆盖同日期旧数据 — 全量补齐时用 (东财 11 字段优先).
+        prefer="existing": 旧数据保留, 新数据仅填补缺失日期 — 增量抓取时用
+                          (防止腾讯 6 字段覆盖已有的 11 字段).
+        按日期降序排列.
+        """
         by_date: dict[str, KLineDataEntity] = {}
-        for k in existing or []:
-            if k.date:
-                by_date[k.date] = k
-        for k in new_rows:
-            if k.date:
-                by_date[k.date] = k
+        if prefer == "existing":
+            # existing 优先: 先填 new_rows, 再用 existing 覆盖同名 key
+            for k in new_rows:
+                if k.date:
+                    by_date[k.date] = k
+            for k in existing or []:
+                if k.date:
+                    by_date[k.date] = k
+        else:
+            # new 优先 (默认): 先填 existing, 再用 new_rows 覆盖
+            for k in existing or []:
+                if k.date:
+                    by_date[k.date] = k
+            for k in new_rows:
+                if k.date:
+                    by_date[k.date] = k
         merged = list(by_date.values())
         merged.sort(key=lambda x: x.date or "", reverse=True)
         return merged
@@ -418,3 +480,108 @@ class KLineService:
             result.append(entity)
         result.sort(key=lambda x: x.date, reverse=True)
         return result
+
+    @dataclass(frozen=True)
+    class GapInfo:
+        """K 线窗口断层信息.
+
+        Attributes:
+            start: 窗口左边界 = previous_years(mapper_window_end, 1)
+            end: 窗口右边界 = mapper_window_end
+            span_days: 窗口跨度 (日历天数) = (end - start).days
+        """
+        start: date
+        end: date
+        span_days: int
+
+    @staticmethod
+    def detect_gap_in_window(
+        klines: list, mapper_window_end: date,
+    ) -> "KLineService.GapInfo | None":
+        """检测 mapper 关心的季度窗口是否断层.
+
+        复用 quarter_of_kline 的窗口生成 (左边界=previous_years(end, 1)),
+        确保与 mapper.creat 内部窗口严格一致.
+        窗口内 K 线 < 5 条 → 视为断层, 返 GapInfo; 否则返 None.
+
+        Args:
+            klines: 当前 K 线数组
+            mapper_window_end: quarter_of_kline 的 start_date (季度末日期)
+
+        Returns:
+            GapInfo(start, end, span_days) 或 None
+        """
+        in_window = quarter_of_kline(klines, mapper_window_end)
+        if len(in_window) >= 5:
+            return None
+        window_start = date_utils.previous_years(mapper_window_end, 1)
+        return KLineService.GapInfo(
+            start=window_start,
+            end=mapper_window_end,
+            span_days=(mapper_window_end - window_start).days,
+        )
+
+    async def backfill_kline_window(
+        self,
+        code: str,
+        market: int | None,
+        start_date: date,
+        end_date: date,
+        name: str | None = None,
+    ) -> KLineEntity | None:
+        """定向补抓指定区间 K 线, 合并入 DB.
+
+        用于 ROE 估值时检测到窗口内 K 线缺失的兜底补抓.
+        复用主链聚合器 (THS→EM/sina/tencent 回退), 用 limit 反推天数, 再切片到目标区间.
+
+        Args:
+            code: 股票代码 (如 "300122")
+            market: 市场代码 (0=深, 1=沪, 2=北, 116=港)
+            start_date: 补抓起点 (含)
+            end_date: 补抓终点 (含)
+            name: 股票名称 (缺省从 DB 现有记录取)
+
+        Returns:
+            更新后的 KLineEntity (含合并后的 klines), 或 None (拉取失败/切片为空)
+        """
+        if market is None or end_date < start_date:
+            return None
+
+        # 1) 用主链聚合器拉"近期"足够多
+        days_back = (date.today() - start_date).days + 30
+        symbol = self._secid_to_symbol(market, code)
+        result = await self._aggregator.fetch(
+            symbol, PERIOD.DAY, FQT.QFQ, limit=days_back,
+        )
+        if not result.rows:
+            return None
+
+        # 2) 切片到 [start_date, end_date]
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        target_rows = [
+            r for r in result.rows
+            if start_iso <= r.date <= end_iso
+        ]
+        if not target_rows:
+            return None
+
+        # 3) 与现有 klines 合并去重 (同日期新覆盖旧)
+        existing = await self.repo.find_by_id(code)
+        if name is None and existing and existing.name:
+            name = existing.name
+        existing_klines = existing.klines if existing else []
+        new_entities = self._rows_to_entities(target_rows)
+        merged = self._merge_klines(existing_klines, new_entities)
+
+        # 4) 落库
+        entity = KLineEntity(code=code, name=name, klines=merged)
+        await self.save_mongodb(entity)
+
+        print(
+            f"[kline/backfill-ths] code={code} window=[{start_date},{end_date}] "
+            f"new={len(target_rows)} merged_total={len(merged)} "
+            f"source={result.source.value if result.source else 'none'}",
+            flush=True,
+        )
+        return entity

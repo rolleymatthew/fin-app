@@ -10,7 +10,6 @@ from app.clients.kline.aggregator import KLineAggregator
 from app.clients.kline.factory import build_aggregator
 from app.clients.kline.sina_adapter import SinaAdapter
 from app.clients.kline.tencent_adapter import TencentAdapter
-from app.clients.kline.ths_adapter import ThsAdapter
 from app.clients.kline.types import (
     FQT,
     PERIOD,
@@ -27,112 +26,18 @@ def _row(date, o, c, h, lo, v, amt=None, turnover=None):
     )
 
 
-# ------------------- THS v4 per-year decode -------------------
+# ------------------- KLineRow -------------------
 
 
-def _fake_v4_payload(year_data: dict[int, list[str]]):
-    """year_data: {2026: [line1, line2, ...], 2025: [...]}"""
-    parts = []
-    for year in sorted(year_data.keys()):
-        ds = ";".join(year_data[year])
-        parts.append(f'{{"total":{len(year_data[year])},"data":"{ds}"}}')
-    return "quotebridge_v4_line_hs_510500_01_0000(" + ",".join(parts) + ")"
+def test_klinerow_defaults_optional_fields():
+    r = KLineRow(date="20260105", open=1.0, close=1.0, high=1.0, low=1.0, volume=100)
+    assert r.amount is None
+    assert r.turnover is None
 
 
-def test_ths_decode_v4_row_basic():
-    from app.clients.kline.ths_adapter import _decode_v4_row
-    line = "20260727,7.544,7.739,7.484,7.726,590866130,4519820200.000,9.629,,0"
-    row = _decode_v4_row(line)
-    assert row is not None
-    assert row.date == "2026-07-27"
-    assert row.open == 7.544
-    assert row.high == 7.739
-    assert row.low == 7.484
-    assert row.close == 7.726
-    assert row.volume == 590866130
-    assert row.amount == 4519820200.000
-    assert row.turnover == 9.629
-
-
-def test_ths_decode_v4_row_short_line_returns_none():
-    from app.clients.kline.ths_adapter import _decode_v4_row
-    assert _decode_v4_row("20260105,7.4,7.5") is None
-
-
-async def test_ths_fetch_returns_merged_history():
-    """v4 多年份合并 + 并发请求 + amount/turnover 都在."""
-    adapter = ThsAdapter()
-
-    years_payload = {
-        2026: [
-            "20260105,7.431,7.583,7.429,7.581,276371420,2138958700.000,1.422,,0",
-            "20260727,7.544,7.739,7.484,7.726,590866130,4519820200.000,9.629,,0",
-        ],
-        2025: ["20251231,7.386,7.400,7.340,7.377,446353440,3386684000.000,2.5,,0"],
-        2024: ["20241231,5.000,5.100,4.900,5.050,200000000,1000000000.000,1.5,,0"],
-    }
-
-    async def fake_get(url):
-        # 从 URL 提取年份
-        import re as _re
-        m = _re.search(r"/(\d{4})\.js$", url)
-        if not m:
-            return None
-        year = int(m.group(1))
-        rows_for_year = years_payload.get(year, [])
-        data_str = ";".join(rows_for_year)
-        payload = '{"total":%d,"data":"%s"}' % (len(rows_for_year), data_str)
-        text = "quotebridge_v4_line_hs_510500_01_%d(%s)" % (year, payload)
-        fake = MagicMock()
-        fake.text = text
-        fake.raise_for_status = MagicMock()
-        return fake
-
-    with patch.object(adapter, "_get", fake_get):
-        rows = await adapter.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=10)
-    assert len(rows) == 4
-    # 按日期升序
-    assert rows[0].date == "2024-12-31"
-    assert rows[-1].date == "2026-07-27"
-    # 所有行都有 amount 和 turnover (THS v4 给完整 11 字段)
-    for r in rows:
-        assert r.amount is not None
-        assert r.turnover is not None
-
-
-async def test_ths_fetch_skips_failed_years():
-    """个别年份失败不应影响其他年份."""
-    adapter = ThsAdapter()
-
-    async def fake_get(url):
-        import re as _re
-        m = _re.search(r"/(\d{4})\.js$", url)
-        if not m:
-            return None
-        year = int(m.group(1))
-        if year == 2025:
-            raise RuntimeError("simulated failure")
-        # 2026 成功, 2024 成功, 其它年份返回空 data
-        if year == 2026:
-            text = ('quotebridge_v4_line_hs_510500_01_2026('
-                    '{"total":1,"data":"20260727,7.5,7.7,7.4,7.6,100,200,1,,0"})')
-        elif year == 2024:
-            text = ('quotebridge_v4_line_hs_510500_01_2024('
-                    '{"total":1,"data":"20241231,5.0,5.1,4.9,5.05,200,1000,1.5,,0"})')
-        else:
-            text = 'quotebridge_v4_line_hs_510500_01_%d({"total":0,"data":""})' % year
-        fake = MagicMock()
-        fake.text = text
-        fake.raise_for_status = MagicMock()
-        return fake
-
-    with patch.object(adapter, "_get", fake_get):
-        rows = await adapter.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=10)
-    assert len(rows) == 2
-    dates = [r.date for r in rows]
-    assert "2024-12-31" in dates
-    assert "2026-07-27" in dates
-    assert "2025" not in str(dates)  # 2025 失败被跳过
+# ------------------- THS Adapter removed (2026-09-02) -------------------
+# THS 适配器已下线, 增量场景改用腾讯主源 (existing 优先保留 11 字段).
+# THS 专项测试随 ths_adapter.py 一起删除.
 
 
 # ------------------- KLineRow -------------------
@@ -234,109 +139,6 @@ async def test_sina_handles_null_response():
     assert rows == []
 
 
-# ------------------- THS Adapter -------------------
-
-
-def _fake_ths_csv_line(date="20260727", o="7.544", h="7.739",
-                       lo="7.484", c="7.726", v="590866130",
-                       amt="4519820200.000", turnover="9.629"):
-    return f"{date},{o},{h},{lo},{c},{v},{amt},{turnover},,0"
-
-
-def _fake_ths_payload(year_data: dict[int, list[str]]):
-    """year_data: {2026: [line1, line2, ...], 2025: [...]}"""
-    parts = []
-    for year in sorted(year_data.keys()):
-        rows = year_data[year]
-        ds = ";".join(rows)
-        sort_year_entry = f'[{year},{len(rows)}]'
-        parts.append(
-            f'{{"total":{sum(len(v) for v in year_data.values())},'
-            f'"sortYear":[{sort_year_entry}],'
-            f'"data":"{ds}"}}'
-        )
-    return "quotebridge_v4_line_hs_510500_01_all(" + ",".join(parts) + ")"
-
-
-async def test_ths_normalizes_strips_market_prefix():
-    adapter = ThsAdapter()
-
-    async def fake_get(url):
-        fake = MagicMock()
-        fake.text = ('quotebridge_v4_line_hs_510500_01_2026('
-                     '{"total":1,"data":"20260727,7.5,7.7,7.4,7.6,100,200,1,,0"})')
-        fake.raise_for_status = MagicMock()
-        return fake
-
-    visited_urls = []
-
-    async def tracker(url):
-        visited_urls.append(url)
-        return await fake_get(url)
-
-    with patch.object(adapter, "_get", tracker):
-        await adapter.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=1)
-    assert visited_urls, "expected at least one HTTP call"
-    sample_url = next(u for u in visited_urls if "/hs_" in u)
-    assert "/hs_510500/" in sample_url
-    assert "sh510500" not in sample_url.split("/hs_")[-1].split("/")[0]
-
-
-async def test_ths_supports_qfq_and_raw_codes():
-    adapter = ThsAdapter()
-
-    urls_visited = []
-
-    async def fake_get(url):
-        urls_visited.append(url)
-        fake = MagicMock()
-        # 返回空 data 即可, 测的是 URL 模式
-        fake.text = 'quotebridge_v4_line_hs_510500_01_2026({"total":0,"data":""})'
-        fake.raise_for_status = MagicMock()
-        return fake
-
-    with patch.object(adapter, "_get", fake_get):
-        await adapter.fetch("510500", PERIOD.DAY, FQT.QFQ, limit=1)
-        await adapter.fetch("510500", PERIOD.DAY, FQT.NONE, limit=1)
-    qfq_urls = [u for u in urls_visited if "/01/" in u]
-    raw_urls = [u for u in urls_visited if "/02/" in u]
-    assert len(qfq_urls) > 0
-    assert len(raw_urls) > 0
-
-
-async def test_ths_does_not_call_when_limit_is_zero():
-    adapter = ThsAdapter()
-    with patch.object(adapter, "_get", AsyncMock()) as m_get:
-        rows = await adapter.fetch("510500", PERIOD.DAY, FQT.QFQ, limit=0)
-    assert rows == []
-    m_get.assert_not_called()
-
-
-async def test_ths_falls_back_to_v4_when_v6_failed():
-    """当前实现只用 v4; 保留此测试以验证 v6 不可达也不影响数据."""
-    adapter = ThsAdapter()
-
-    async def fake_get(url):
-        fake = MagicMock()
-        # 模拟任何年份都有 1 条 CSV
-        import re as _re
-        m = _re.search(r"/(\d{4})\.js$", url)
-        year = m.group(1) if m else "?"
-        payload = '{"total":1,"data":"2026%s-01-01,7,7,7,7,100,200,1,,0"}' % year[2:]
-        fake.text = "quotebridge_v4_line_hs_510500_01_%s(%s)" % (year, payload)
-        fake.raise_for_status = MagicMock()
-        return fake
-
-    with patch.object(adapter, "_get", fake_get):
-        rows = await adapter.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=50)
-    # 每个年份至少有 1 条, 至少有 13 条 (15 - 一些未来年)
-    assert len(rows) >= 13
-    # 所有行都应该有 amount/turnover (v4 提供)
-    for r in rows:
-        assert r.amount is not None
-        assert r.turnover is not None
-
-
 # ------------------- Aggregator (primary + fallback chain) -------------------
 
 
@@ -403,10 +205,10 @@ async def test_aggregator_returns_empty_when_all_fail():
 def test_factory_builds_aggregator_from_config(monkeypatch):
     from app.clients.kline import factory
     monkeypatch.setattr(factory, "_build_adapter", lambda source: _StubAdapter(source, []))
-    agg = build_aggregator(primary="ths", fallbacks=["tencent", "sina"])
+    agg = build_aggregator(primary="tencent", fallbacks=["eastmoney", "sina"])
     assert isinstance(agg, KLineAggregator)
-    assert agg.primary_source == SOURCE.THS
-    assert agg.fallback_sources == [SOURCE.TENCENT, SOURCE.SINA]
+    assert agg.primary_source == SOURCE.TENCENT
+    assert agg.fallback_sources == [SOURCE.EASTMONEY, SOURCE.SINA]
 
 
 def test_factory_rejects_unknown_source():
@@ -490,7 +292,7 @@ async def test_eastmoney_returns_empty_on_http_error():
 
 
 async def test_klineservice_uses_chain_for_sh_market(monkeypatch):
-    """无历史 → 全量抓取走 eastmoney→ths→sina→tencent 链."""
+    """无历史 → 全量抓取走 eastmoney→sina→tencent 链."""
     from app.services.kline_service import KLineService
 
     # 强制构造 (避开真实 Mongo); repo.find_by_id 返回 None (无历史)
@@ -543,7 +345,7 @@ async def test_klineservice_falls_back_to_eastmoney_when_chain_empty(monkeypatch
 
 
 async def test_klineservice_incremental_when_db_has_history():
-    """DB 有历史 → 增量拉取 (THS 主源), 只取 last_date 之后的行, 合并返回."""
+    """DB 有历史 → 增量拉取 (腾讯主源), 只取 last_date 之后的行, 合并返回."""
     from app.models.entities import KLineDataEntity
     from app.services.kline_service import KLineService
 
@@ -568,7 +370,7 @@ async def test_klineservice_incremental_when_db_has_history():
         _row("2026-07-30", 7.4, 7.3, 7.5, 7.2, 9016071 * 100),
         _row("2026-07-31", 7.6, 7.5, 7.6, 7.4, 9936368 * 100),
     ]
-    inc_result = MagicMock(rows=inc_rows, source=SOURCE.THS, fell_back=False, error=None)
+    inc_result = MagicMock(rows=inc_rows, source=SOURCE.TENCENT, fell_back=False, error=None)
     stub_inc_agg = MagicMock()
     stub_inc_agg.fetch = AsyncMock(return_value=inc_result)
     service._aggregator = stub_inc_agg
@@ -581,8 +383,8 @@ async def test_klineservice_incremental_when_db_has_history():
     assert dates == ["2026-07-31", "2026-07-30", "2026-07-29"]  # 降序
     assert len(entity.klines) == 3
     # 增量 limit 按 last_date 到今天的日历天数计算
-    _, kwargs = stub_inc_agg.fetch.call_args
-    assert kwargs["limit"] >= 1  # 至少 1 天
+    args, _ = stub_inc_agg.fetch.call_args
+    assert args[3] >= 1  # 至少 1 天
     # full aggregator 未被调用
     service._full_aggregator.fetch.assert_not_called()
 
@@ -608,7 +410,7 @@ async def test_klineservice_incremental_uptodate_returns_existing():
     inc_rows = [
         _row("2026-07-30", 7.4, 7.3, 7.5, 7.2, 9016071 * 100),
     ]
-    inc_result = MagicMock(rows=inc_rows, source=SOURCE.THS, fell_back=False, error=None)
+    inc_result = MagicMock(rows=inc_rows, source=SOURCE.TENCENT, fell_back=False, error=None)
     stub_inc_agg = MagicMock()
     stub_inc_agg.fetch = AsyncMock(return_value=inc_result)
     service._aggregator = stub_inc_agg

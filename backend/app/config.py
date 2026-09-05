@@ -36,16 +36,16 @@ class Settings(BaseSettings):
     )
 
     # KLine 多源配置: 主源 + 回退链 (env: FIN_KLINE_PRIMARY / FIN_KLINE_FALLBACKS)
-    # 默认顺序: eastmoney → ths → sina → tencent
-    # 改 eastmoney 为默认主源 (2026-08-21):
-    #   - THS 增量抓取偶尔返回日期不在期望窗口的行, 但聚合器"first-non-empty"会误判成功
-    #   - 东财 11 字段全、增量窗口精确, 但需要 Cookie
+    # 增量场景默认顺序: tencent → eastmoney → sina (2026-09-02 改造: 移除 THS)
+    #   - 腾讯 主源: 无需 Cookie, 反爬宽松, 字段 6 个 (缺 amount/turnover/振幅/涨跌幅/涨跌额)
+    #   - 东财 兜底: 11 字段全, 增量窗口精确, 但需要 Cookie, 有反爬延时
+    # 全量场景 (DB 无历史 或 last_date 距今 > 90 天) 仍硬编码走东财, 保证首次入库字段完整
     kline_primary: str = Field(
-        default="eastmoney",
+        default="tencent",
         validation_alias=AliasChoices("FIN_KLINE_PRIMARY", "KLINE_PRIMARY"),
     )
     kline_fallbacks: str = Field(
-        default="ths,sina,tencent",
+        default="eastmoney,sina",
         validation_alias=AliasChoices("FIN_KLINE_FALLBACKS", "KLINE_FALLBACKS"),
     )
 

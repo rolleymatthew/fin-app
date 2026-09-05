@@ -179,7 +179,7 @@ class _StubAdapter:
 async def test_aggregator_records_chain_results_on_success():
     """主源成功时 chain_results 应包含主源的成功记录."""
     primary = _StubAdapter(SOURCE.EASTMONEY, [_row("2026-08-20")])
-    fb = _StubAdapter(SOURCE.THS, [])
+    fb = _StubAdapter(SOURCE.SINA, [])
     agg = KLineAggregator(primary=primary, fallbacks=[fb])
     result = await agg.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=5)
     assert result.source == SOURCE.EASTMONEY
@@ -192,27 +192,27 @@ async def test_aggregator_records_chain_results_on_success():
 async def test_aggregator_records_chain_results_on_all_empty():
     """所有源都返回空时 chain_results 应包含所有源的尝试记录."""
     primary = _StubAdapter(SOURCE.EASTMONEY, [])
-    fb1 = _StubAdapter(SOURCE.THS, [])
-    fb2 = _StubAdapter(SOURCE.SINA, [_row("2026-08-21")])
+    fb1 = _StubAdapter(SOURCE.SINA, [])
+    fb2 = _StubAdapter(SOURCE.TENCENT, [_row("2026-08-21")])
     agg = KLineAggregator(primary=primary, fallbacks=[fb1, fb2])
     result = await agg.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=5)
     # fb2 返回非空, 应使用 fb2
-    assert result.source == SOURCE.SINA
+    assert result.source == SOURCE.TENCENT
     # chain 应记录前两个 empty + 第三个 ok
     chain = result.chain_results
     assert chain is not None and len(chain) == 3
     assert (chain[0][0], chain[0][1]) == ("eastmoney", "empty")
-    assert (chain[1][0], chain[1][1]) == ("ths", "empty")
-    assert (chain[2][0], chain[2][1]) == ("sina", "ok")
+    assert (chain[1][0], chain[1][1]) == ("sina", "empty")
+    assert (chain[2][0], chain[2][1]) == ("tencent", "ok")
 
 
 async def test_aggregator_records_chain_results_on_exception():
     """源抛异常时 chain_results 应记录 error 状态."""
     primary = _StubAdapter(SOURCE.EASTMONEY, raise_exc=TimeoutError("boom"))
-    fb = _StubAdapter(SOURCE.THS, [_row("2026-08-21")])
+    fb = _StubAdapter(SOURCE.TENCENT, [_row("2026-08-21")])
     agg = KLineAggregator(primary=primary, fallbacks=[fb])
     result = await agg.fetch("sh510500", PERIOD.DAY, FQT.QFQ, limit=5)
-    assert result.source == SOURCE.THS
+    assert result.source == SOURCE.TENCENT
     chain = result.chain_results
     assert chain is not None and len(chain) == 2
     assert chain[0][1] == "error"
@@ -226,13 +226,13 @@ def test_format_chain_results_includes_status_and_error():
     """_format_chain_results 应展示每个源的状态 + 错误."""
     chain = [
         ("eastmoney", "empty", 0, None),
-        ("ths", "error", 0, "ConnectionError: timeout"),
-        ("sina", "ok", 5, None),
+        ("sina", "error", 0, "ConnectionError: timeout"),
+        ("tencent", "ok", 5, None),
     ]
     formatted = KLineService._format_chain_results(chain)
     assert "eastmoney=empty" in formatted
-    assert "ths=error:ConnectionError" in formatted
-    assert "sina=ok:5" in formatted
+    assert "sina=error:ConnectionError" in formatted
+    assert "tencent=ok:5" in formatted
 
 
 def test_format_chain_results_handles_empty():
@@ -243,7 +243,7 @@ def test_format_chain_results_handles_empty():
 def test_format_chain_results_truncates_long_error():
     """错误信息超过 80 字符应截短."""
     long_err = "x" * 200
-    chain = [("ths", "error", 0, long_err)]
+    chain = [("sina", "error", 0, long_err)]
     formatted = KLineService._format_chain_results(chain)
     # 不应包含原始 200 个 x
     assert formatted.count("x") <= 80

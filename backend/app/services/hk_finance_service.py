@@ -15,6 +15,8 @@ from app.clients.eastmoney import get_eastmoney_client
 from app.clients.eastmoney_datacenter_new import EastmoneyDataNewClient
 from app.config import get_settings
 from app.constants import spider
+
+logger = logging.getLogger(__name__)
 from app.constants.cash_flow_type import CashFlowTypeEnum
 from app.constants.score import (
     AccountsRecivableScore,
@@ -42,8 +44,6 @@ from app.models.entities import (
 from app.repositories.base import MongoRepository
 from app.services.kline_service import KLineService
 from app.utils import hk_financial_utils, num_utils
-
-logger = logging.getLogger(__name__)
 
 # HK item codes from plan section 8.3
 # Balance sheet codes
@@ -330,6 +330,7 @@ class HKFinanceService:
         cash_list = await self._hk_cash_flow_list(code)
         main_map = await self._fetch_hk_main_indicator_map(code)
 
+        date_key_fn = lambda e: (getattr(e, "reportDate", "") or "").replace(" 00:00:00", "")
         has_data = len(balance_list) >= 2 and len(profit_list) >= 2 and len(cash_list) >= 2
         if not has_data:
             msg = (

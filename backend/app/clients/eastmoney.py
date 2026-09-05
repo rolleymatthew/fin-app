@@ -97,6 +97,22 @@ class EastmoneyClient(BaseHttpClient):
             dir_path = None
         if dir_path is not None:
             store = CookieStore(dir_path)
+            # 2026-09-02 改造: 优先用 mtime 最新的单文件, 不再合并所有 *.txt
+            # 这样"东财今天刚复制的 cookie"会立刻胜出, 不被旧文件覆盖
+            latest = store.latest_file()
+            if latest is not None:
+                content = store.load_file(latest)
+                if content:
+                    self._seed_from_string(content)
+                    store.mark_loaded(content)
+                    print(
+                        f"Cookie 已从最新文件种子化: {latest} "
+                        f"({len(content.split(';'))} 个字段)",
+                        flush=True,
+                    )
+                    self._cookie_store = store
+                    return True
+            # 回落: 合并加载所有 .txt (向后兼容 — 旧部署或空目录场景)
             store.load_if_changed(self._client)
             loaded = store.current_string()
             if loaded:
@@ -123,6 +139,35 @@ class EastmoneyClient(BaseHttpClient):
         self._seed_from_string(cookie_str)
         print(f"Cookie 已种子化 (来源: {source}): {self._mask_cookie(cookie_str)}", flush=True)
         return True
+
+    def try_next_cookie_file(self) -> bool:
+        """按 mtime 倒序逐个试不同的 cookie 文件, 把 jar 切到次新的.
+
+        用于 ``CookieHealthChecker`` 检测到失效且 headless + HTTP 流都失败时的兜底:
+        目录里多个历史 cookie 文件, 切到次新的看看能不能用.
+
+        Returns:
+            True  : 切换到与当前 jar 内容不同的文件.
+            False : 没有更多文件可试 (或 ``_cookie_store`` 未初始化).
+        """
+        if self._cookie_store is None:
+            return False
+        current = self._get_cookie_string()
+        for f in self._cookie_store.files_by_mtime_desc():
+            content = self._cookie_store.load_file(f)
+            if not content:
+                continue
+            # 内容不同就切 (跳过当前已用的)
+            if content == current:
+                continue
+            self._seed_from_string(content)
+            # 同步 CookieStore 状态: 单文件胜出路径绕过 load_if_changed,
+            # 必须显式登记 _last_string, 否则下一次 kline() 触发
+            # load_if_changed() 时会被误判为"文件变化", 走合并所有
+            # *.txt 的路径, 让旧 cookie 重新进入 jar
+            self._cookie_store.mark_loaded(content)
+            return True
+        return False
 
     def _seed_from_string(self, cookie_str: str) -> None:
         for part in cookie_str.split(";"):
@@ -243,15 +288,18 @@ class EastmoneyClient(BaseHttpClient):
         before = self._get_cookie_string()
         ua = random_user_agent()
         # 浏览器首页用 HTML Accept 即可
+        # 探测请求必须带 Cookie: 之前版本没带, 导致东财反爬直接断连,
+        # 即使 jar 里 cookie 正常也会误判为"刷新无效"
         html_headers = {
             "User-Agent": ua,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "zh-CN,zh;q=0.9",
             "Accept-Encoding": "gzip, deflate",
             "Connection": "keep-alive",
+            "Cookie": before,
         }
         # push2his kline 是 JSON API，仿照 Java Feign 客户端的 headers，
-        # 关键是要带 Referer，否则东财会直接断连
+        # 关键是要带 Referer 与 Cookie, 否则东财会直接断连
         kline_headers = {
             "User-Agent": ua,
             "Accept": "*/*",
@@ -260,10 +308,12 @@ class EastmoneyClient(BaseHttpClient):
             "Connection": "keep-alive",
             "Host": "push2his.eastmoney.com",
             "Referer": "https://quote.eastmoney.com/sh510500.html",
+            "X-Requested-With": "XMLHttpRequest",
             "sec-fetch-dest": "script",
             "sec-fetch-mode": "no-cors",
             "sec-fetch-site": "same-site",
             "pragma": "no-cache",
+            "Cookie": before,
         }
         # 候选 URL：依次尝试，谁先下发新 Set-Cookie 就用谁
         # 第二个为 push2his kline 接口，可以拿到最贴合 kline 数据请求的 cookie

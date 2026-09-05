@@ -68,6 +68,7 @@ from app.models.entities import (
     DuPondEntity,
     FinEntity,
     FreeCashFlowEntity,
+    KLineEntity,
     ProfitBankEntity,
     ProfitInsuranceEntity,
     ProfitSecuritiesEntity,
@@ -642,6 +643,50 @@ class FinanceService:
 
         await self.roe_eps_repo.save(roe_eps)
 
+    async def _ensure_kline_complete(
+        self, kline_entity: KLineEntity, sec_code_entity: SecCodeEntity,
+    ) -> KLineEntity | None:
+        """检测 K 线窗口断层, 按缺口大小选路径补抓 1 次.
+
+        单次 _get_yb_roe_entity 调用最多触发 1 次补抓 (取最大缺口 1 个).
+        缺口 > 120 日 → EM 全量重抓 (复用 refresh_kline_data);
+        缺口 ≤ 120 日 → 定向窗口补抓 (新 backfill_kline_window).
+
+        Returns:
+            原 entity (窗口全齐) 或补抓后的 entity (成功) 或 None (补抓失败).
+        """
+        profits = await self._get_profit_list_by_org_type(sec_code_entity)
+        if not profits:
+            return kline_entity
+
+        report_date = profits[0].reportDate
+        week = date_utils.quarter_date_list(
+            date_utils.today(), False, report_date,
+        )
+
+        klines = kline_entity.klines or []
+        gaps: list = []
+        for i in range(4):
+            gap = self.kline_service.detect_gap_in_window(klines, week[i])
+            if gap is not None:
+                gaps.append(gap)
+
+        if not gaps:
+            return kline_entity
+
+        biggest = max(gaps, key=lambda g: g.span_days)
+        market = self.kline_service.market_code(sec_code_entity.secucode)
+        name = getattr(sec_code_entity, "securityNameAbbr", "") or None
+
+        if biggest.span_days > 120:
+            return await self.kline_service.refresh_kline_data(
+                sec_code_entity.securityCode, market, name=name,
+            )
+        return await self.kline_service.backfill_kline_window(
+            sec_code_entity.securityCode, market,
+            start_date=biggest.start, end_date=biggest.end, name=name,
+        )
+
     async def _get_yb_roe_entity(self, force: int, sec_code_entity: SecCodeEntity):
         listing_date = sec_code_entity.listingDate
         if (
@@ -652,6 +697,9 @@ class FinanceService:
         ):
             return None
         kline_entity = await self.kline_service.kline_by_sec_code(sec_code_entity.securityCode)
+        if not kline_entity or not kline_entity.klines:
+            return None
+        kline_entity = await self._ensure_kline_complete(kline_entity, sec_code_entity)
         if not kline_entity or not kline_entity.klines:
             return None
         profit_entities = []
@@ -1356,6 +1404,18 @@ class FinanceService:
         header_fill = PatternFill(fill_type="solid", fgColor="BFBFBF")
         header_align = Alignment(horizontal="center", vertical="center")
         header_font = Font(name="Microsoft YaHei", size=10, color="00008B", bold=True)
+        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
+        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
+        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
+        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
+        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
+        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
+        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
+        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
+        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
+        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
+        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
+        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
         header_font_deep_green = Font(name="Microsoft YaHei", size=10, color="006400", bold=True)
         ws.row_dimensions[1].height = 20
         for c, h in enumerate(headers, start=1):
@@ -1682,8 +1742,10 @@ class FinanceService:
         data_cash_font = Font(name="Calibri", size=11, bold=False, color="2CA02C")
         data_align = Alignment(horizontal="right", vertical="center")
         date_align = Alignment(horizontal="center", vertical="center")
+        score_red_font = Font(name="Calibri", size=11, bold=False, color="FF0000")
         score_sky_font = Font(name="Calibri", size=11, bold=False, color="87CEFA")
         score_orange_font = Font(name="Calibri", size=11, bold=False, color="FFA500")
+        score_grass_font = Font(name="Calibri", size=11, bold=False, color="7CFC00")
         score_deep_green_font = Font(name="Calibri", size=11, bold=False, color="006400")
         score_deep_blue_font = Font(name="Calibri", size=11, bold=False, color="00008B")
         rating_good_font = Font(name="Microsoft YaHei", size=11, bold=True, color="FFFFFF")
@@ -1692,6 +1754,7 @@ class FinanceService:
         rating_good_fill = PatternFill(fill_type="solid", fgColor="FF0000")
         rating_mid_fill = PatternFill(fill_type="solid", fgColor="FFFFFF")
         rating_watch_fill = PatternFill(fill_type="solid", fgColor="00FF00")
+        red_cols = {3}  # 总分评级
         sky_cols = {5, 7, 9, 11}  # 各类得分
         if is_finance_related:
             orange_cols = set()
