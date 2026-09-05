@@ -10,7 +10,7 @@ from app.utils import class_util, date_utils
 class AnalysisEntityMapper:
     def get_strings_list(self, temp: str) -> List[List[str]]:
         lines = temp.split("\r\n")
-        return [line.strip().split(",") for line in lines if len(line) > 10]
+        return [l.strip().split(",") for l in lines if len(l) > 10]
 
     def get_headers(self, collect: List[List[str]]) -> List[str]:
         col = [s[0] for s in collect if len(s) >= 2]
@@ -107,6 +107,6 @@ class AnalysisEntityMapper:
             if "03-31" in str(class_util.get_field_value_by_name("reportDate", profit)):
                 v = Decimal(str(class_util.get_field_value_by_name("basicEps", profit) or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             else:
-                v = Decimal(str(class_util.get_field_value_by_name("basicEps", profit) or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) - Decimal(str(class_util.get_field_value_by_name("basicEps", profit_1) or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)  # noqa: E501
+                v = Decimal(str(class_util.get_field_value_by_name("basicEps", profit) or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) - Decimal(str(class_util.get_field_value_by_name("basicEps", profit_1) or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total += v
         return {"date": date_utils.format_date_with_slip(report_date), "eps": total}

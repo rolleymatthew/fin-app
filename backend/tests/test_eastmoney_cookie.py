@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
 import pytest
@@ -179,7 +179,9 @@ async def test_refresh_once_returns_false_when_no_change(
     store.load_if_changed(http_client)
     fake_client = AsyncMock()
     fake_client._refresh_cookie_from_server = AsyncMock(return_value=False)
-    assert await CookieHealthChecker().refresh_once(fake_client) is False
+    fake_client.try_next_cookie_file = MagicMock(return_value=False)
+    checker = CookieHealthChecker()
+    assert await checker.refresh_once(fake_client) is False
 
 
 async def test_seed_cookie_jar_uses_default_directory_when_no_cookie_config(
@@ -247,3 +249,69 @@ async def test_kline_does_not_persist_cookie_in_directory_mode(
 
     assert result == '{"rc": 0}'
     persist_cookie.assert_not_called()
+
+
+# ------------------- CookieStore single-file helpers (2026-09-02) -------------------
+
+
+def test_latest_file_returns_newest(tmp_path):
+    """latest_file() 应返回 mtime 最大的 *.txt 文件."""
+    import time as _time
+    (tmp_path / "old.txt").write_text("a=1")
+    _time.sleep(0.05)
+    (tmp_path / "new.txt").write_text("b=2")
+    store = CookieStore(tmp_path)
+    result = store.latest_file()
+    assert result is not None
+    assert result.name == "new.txt"
+
+
+def test_latest_file_returns_none_when_empty(tmp_path):
+    """目录无 *.txt 时返回 None."""
+    store = CookieStore(tmp_path)
+    assert store.latest_file() is None
+
+
+def test_files_by_mtime_desc_orders_newest_first(tmp_path):
+    """files_by_mtime_desc() 应按 mtime 倒序返回."""
+    import time as _time
+    (tmp_path / "a.txt").write_text("a=1")
+    _time.sleep(0.05)
+    (tmp_path / "b.txt").write_text("b=2")
+    _time.sleep(0.05)
+    (tmp_path / "c.txt").write_text("c=3")
+    store = CookieStore(tmp_path)
+    files = store.files_by_mtime_desc()
+    assert [f.name for f in files] == ["c.txt", "b.txt", "a.txt"]
+
+
+def test_load_file_returns_content(tmp_path):
+    """load_file() 应返回文件内容（strip）."""
+    (tmp_path / "x.txt").write_text("  qgqp_b_id=abc; st_nvi=xyz  ")
+    store = CookieStore(tmp_path)
+    assert store.load_file(tmp_path / "x.txt") == "qgqp_b_id=abc; st_nvi=xyz"
+
+
+def test_load_file_returns_empty_on_missing(tmp_path):
+    """load_file() 读失败时返回空字符串."""
+    store = CookieStore(tmp_path)
+    assert store.load_file(tmp_path / "no_such.txt") == ""
+
+
+async def test_refresh_once_returns_true_when_jar_changes_shortcut(
+    cookie_dir: Path, http_client: httpx.AsyncClient
+):
+    """HTTP 兜底成功 → 不尝试切次新 cookie 文件."""
+    store = CookieStore(cookie_dir)
+    store.load_if_changed(http_client)
+
+    fake_client = AsyncMock()
+    fake_client._refresh_cookie_from_server = AsyncMock(return_value=True)
+    fake_client.try_next_cookie_file = MagicMock(return_value=False)
+
+    checker = CookieHealthChecker()
+    result = await checker.refresh_once(fake_client)
+
+    assert result is True
+    fake_client._refresh_cookie_from_server.assert_awaited_once()
+    fake_client.try_next_cookie_file.assert_not_called()

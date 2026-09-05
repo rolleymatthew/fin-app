@@ -23,6 +23,9 @@ class CookieHealthChecker:
         "Forbidden",
     )
 
+    def __init__(self):
+        pass
+
     def check(self, text: str) -> CookieHealth:
         if not text:
             return CookieHealth(invalid=False)
@@ -41,8 +44,18 @@ class CookieHealthChecker:
         return CookieHealth(invalid=False)
 
     async def refresh_once(self, client) -> bool:
-        """委托 EastmoneyClient 的现有刷新逻辑。仅当 jar 真正变化时返回 True。"""
-        return await client._refresh_cookie_from_server()
+        """两层兜底: HTTP 流 → 切次新 cookie 文件.
+
+        任一方式拿到新 cookie 都返回 True. 全失败返回 False.
+        """
+        if await client._refresh_cookie_from_server():
+            return True
+
+        if client.try_next_cookie_file():
+            print("[cookie/file] switched to next-newest cookie file", flush=True)
+            return True
+
+        return False
 
 
 class CookieStore:
@@ -107,6 +120,36 @@ class CookieStore:
         self._last_snapshot = new_snap
         self._last_string = combined
         return snapshot_changed and not is_initial
+
+    def latest_file(self) -> Path | None:
+        """返回 mtime 最新的 *.txt 文件路径. 目录为空返回 None."""
+        files = self._iter_files()
+        if not files:
+            return None
+        return max(files, key=lambda p: p.stat().st_mtime)
+
+    def files_by_mtime_desc(self) -> list[Path]:
+        """按 mtime 倒序返回所有文件."""
+        files = self._iter_files()
+        return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+    def load_file(self, path: Path) -> str:
+        """读取单个 *.txt 文件内容 (strip). 读失败返回空字符串."""
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    def mark_loaded(self, cookie_str: str) -> None:
+        """登记外部已加载的 cookie 字符串.
+
+        单文件模式 (``latest_file()`` + ``load_file()``) 绕过了
+        ``load_if_changed()``, 需要显式同步快照与当前字符串, 否则
+        ``current_string()`` 为空 (诊断日志 fields=0), 且下一次
+        ``load_if_changed()`` 会被误判为"文件变化"。
+        """
+        self._last_snapshot = self.file_snapshot()
+        self._last_string = cookie_str
 
     def _write_to_jar(self, client: httpx.AsyncClient, cookie_str: str) -> None:
         if not cookie_str:

@@ -43,7 +43,7 @@ cd frontend && pnpm run lint && pnpm run build
 - **前端 API 约定**：`src/api.js` 的 `_request` 假设后端返回 `{ success: true, data: ... }` 形态，否则抛 `ApiError` 并把 `code / errorType / path / durationMs` 一并抛出。
 - **配置**：`backend/app/config.py` 用 pydantic-settings，所有 env 带 `FIN_` 前缀（个别历史字段兼容 `USE_FINANCE_EASTMONEY_V2`、`KLINE_*` 大写别名）。完整 env 见 `backend/README.md`。
 - **静态前端托管**：当 `WEB_DIR` 指向已构建的 `frontend/dist` 时，后端 `mount("/")` 直接 serve。Docker 模式用此方式；本地 dev 不走此路。
-- **KLine 多源**：`kline_primary` 默认 `eastmoney`，`kline_fallbacks` 默认 `ths,sina,tencent`。可用 `FIN_KLINE_PRIMARY` / `FIN_KLINE_FALLBACKS` 覆盖。
+- **KLine 多源**：`kline_primary` 默认 `tencent`，`kline_fallbacks` 默认 `eastmoney,sina`（与 react test 分支同步，2026-09-02 移除 THS）。可用 `FIN_KLINE_PRIMARY` / `FIN_KLINE_FALLBACKS` 覆盖。
 - **Cookie 来源**：`FIN_COOKIE_DIR`（目录模式，多 `.txt` 文件按名拼接，热加载）> `EASTMONEY_COOKIE_*` 旧别名 > `.eastmoney_cookies/`。失效时会打印 `【COOKIE_INVALID】reason=...`。
 
 ## Docker 启动

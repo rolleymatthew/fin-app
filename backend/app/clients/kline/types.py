@@ -26,7 +26,6 @@ class FQT(str, Enum):
 class SOURCE(str, Enum):
     TENCENT = "tencent"
     SINA = "sina"
-    THS = "ths"
     EASTMONEY = "eastmoney"
 
 

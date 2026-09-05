@@ -215,11 +215,11 @@ class YbEpsEntityMapper:
         yb.fourquarterpelower = self._divide(quarter_eps_list[3]["low"], quarter_year_eps_list[3]["eps"])
         yb.laterfourqepstotal = quarter_year_eps_list[3]["eps"]
 
-        yb.fourquarteravagpehigher = self._divide(num_utils.add(quarter_eps_list[0]["highEps"], quarter_eps_list[1]["highEps"], quarter_eps_list[2]["highEps"], quarter_eps_list[3]["highEps"]), Decimal(4))  # noqa: E501
-        yb.fourquarteravagpemiddle = self._divide(num_utils.add(quarter_eps_list[0]["avgEps"], quarter_eps_list[1]["avgEps"], quarter_eps_list[2]["avgEps"], quarter_eps_list[3]["avgEps"]), Decimal(4))  # noqa: E501
-        yb.fourquarteravagpelower = self._divide(num_utils.add(quarter_eps_list[0]["lowEps"], quarter_eps_list[1]["lowEps"], quarter_eps_list[2]["lowEps"], quarter_eps_list[3]["lowEps"]), Decimal(4))  # noqa: E501
+        yb.fourquarteravagpehigher = self._divide(num_utils.add(quarter_eps_list[0]["highEps"], quarter_eps_list[1]["highEps"], quarter_eps_list[2]["highEps"], quarter_eps_list[3]["highEps"]), Decimal(4))
+        yb.fourquarteravagpemiddle = self._divide(num_utils.add(quarter_eps_list[0]["avgEps"], quarter_eps_list[1]["avgEps"], quarter_eps_list[2]["avgEps"], quarter_eps_list[3]["avgEps"]), Decimal(4))
+        yb.fourquarteravagpelower = self._divide(num_utils.add(quarter_eps_list[0]["lowEps"], quarter_eps_list[1]["lowEps"], quarter_eps_list[2]["lowEps"], quarter_eps_list[3]["lowEps"]), Decimal(4))
 
-        yb.laterfourqavaepstotal = (num_utils.add(yb.laterfirstqepstotal, yb.latertwoqepstotal, yb.laterthreeqepstotal, yb.laterfourqepstotal) / Decimal(4)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)  # noqa: E501
+        yb.laterfourqavaepstotal = (num_utils.add(yb.laterfirstqepstotal, yb.latertwoqepstotal, yb.laterthreeqepstotal, yb.laterfourqepstotal) / Decimal(4)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         yb.pricehigher = self._price(yb.oneepstotal, yb.fouryearavarageepstotal, yb.fouryearavagpehigher)
         yb.pricemiddle = self._price(yb.oneepstotal, yb.fouryearavarageepstotal, yb.fouryearavagpemiddle)
