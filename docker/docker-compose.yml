@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongodb/mongodb-community-server:8.3.4-ubuntu270417
+    image: mongodb/mongodb-community-server:8.3.4-ubi9-slim-20260717T064811Z
     container_name: etf-mongodb
     restart: unless-stopped
     user: "0:0"
