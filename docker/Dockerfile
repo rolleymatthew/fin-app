@@ -11,6 +11,7 @@ WORKDIR /build
 COPY frontend/ ./
 RUN corepack enable \
  && corepack prepare pnpm@11.7.0 --activate \
+ && pnpm config set registry https://registry.npmmirror.com \
  && pnpm install --config.confirmModulesPurge=false
 RUN pnpm run build
 
