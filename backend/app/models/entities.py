@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date as dt_date
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -160,9 +161,9 @@ class ProfitForecastEntity(BaseDoc):
     ratingOrgNum: int | None = None
     ratingBuyNum: int | None = None
     ratingAddNum: int | None = None
-    ratingNeutralNum: Object | None = None
-    ratingReduceNum: Object | None = None
-    ratingSaleNum: Object | None = None
+    ratingNeutralNum: Any | None = None
+    ratingReduceNum: Any | None = None
+    ratingSaleNum: Any | None = None
     year1: int | None = None
     yearMark1: str | None = None
     eps1: float | None = None

@@ -110,14 +110,9 @@ const styles = {
 const HKFinanceCard = () => {
   const [isCardOpen, setIsCardOpen] = useState(false);
   const [comboboxValue, setComboboxValue] = useState({ code: '', name: '' });
-  const [manualCode, setManualCode] = useState('');
-  const [manualName, setManualName] = useState('');
+  const [manualCode] = useState('');
+  const [manualName] = useState('');
   const [batchInput, setBatchInput] = useState('');
-
-  const handleManualCodeChange = (e) => {
-    const raw = e.target.value.replace(/\D/g, '').slice(0, 5);
-    setManualCode(raw);
-  };
 
   const fetchOne = async (code, name) => {
     const url = `/api/hk/one?code=${encodeURIComponent(code)}&name=${encodeURIComponent(name || '')}`;

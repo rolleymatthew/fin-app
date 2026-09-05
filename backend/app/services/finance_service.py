@@ -1356,18 +1356,6 @@ class FinanceService:
         header_fill = PatternFill(fill_type="solid", fgColor="BFBFBF")
         header_align = Alignment(horizontal="center", vertical="center")
         header_font = Font(name="Microsoft YaHei", size=10, color="00008B", bold=True)
-        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
-        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
-        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
-        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
-        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
-        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
-        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
-        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
-        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
-        profit_font = Font(name="Microsoft YaHei", size=10, color="1F77B4", bold=True)
-        structure_font = Font(name="Microsoft YaHei", size=10, color="D62728", bold=True)
-        cash_font = Font(name="Microsoft YaHei", size=10, color="2CA02C", bold=True)
         header_font_deep_green = Font(name="Microsoft YaHei", size=10, color="006400", bold=True)
         ws.row_dimensions[1].height = 20
         for c, h in enumerate(headers, start=1):
@@ -1694,10 +1682,8 @@ class FinanceService:
         data_cash_font = Font(name="Calibri", size=11, bold=False, color="2CA02C")
         data_align = Alignment(horizontal="right", vertical="center")
         date_align = Alignment(horizontal="center", vertical="center")
-        score_red_font = Font(name="Calibri", size=11, bold=False, color="FF0000")
         score_sky_font = Font(name="Calibri", size=11, bold=False, color="87CEFA")
         score_orange_font = Font(name="Calibri", size=11, bold=False, color="FFA500")
-        score_grass_font = Font(name="Calibri", size=11, bold=False, color="7CFC00")
         score_deep_green_font = Font(name="Calibri", size=11, bold=False, color="006400")
         score_deep_blue_font = Font(name="Calibri", size=11, bold=False, color="00008B")
         rating_good_font = Font(name="Microsoft YaHei", size=11, bold=True, color="FFFFFF")
@@ -1706,7 +1692,6 @@ class FinanceService:
         rating_good_fill = PatternFill(fill_type="solid", fgColor="FF0000")
         rating_mid_fill = PatternFill(fill_type="solid", fgColor="FFFFFF")
         rating_watch_fill = PatternFill(fill_type="solid", fgColor="00FF00")
-        red_cols = {3}  # 总分评级
         sky_cols = {5, 7, 9, 11}  # 各类得分
         if is_finance_related:
             orange_cols = set()

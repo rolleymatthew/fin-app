@@ -63,7 +63,7 @@ const styles = {
 
 const HKStockCombobox = ({ value, onChange }) => {
   const [code, setCode] = useState(value?.code || '');
-  const [name, setName] = useState(value?.name || '');
+  const [, setName] = useState(value?.name || '');
 
   const emit = (nextCode, nextName) => {
     if (onChange) onChange({ code: nextCode, name: nextName });
@@ -77,18 +77,6 @@ const HKStockCombobox = ({ value, onChange }) => {
     setCode(preset.code);
     setName(preset.name);
     emit(preset.code, preset.name);
-  };
-
-  const handleCodeInput = (e) => {
-    const raw = e.target.value.replace(/\D/g, '').slice(0, 5);
-    setCode(raw);
-    emit(raw, name);
-  };
-
-  const handleNameInput = (e) => {
-    const v = e.target.value;
-    setName(v);
-    emit(code, v);
   };
 
   return (
