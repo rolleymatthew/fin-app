@@ -1,0 +1,36 @@
+# Git + 工作树元数据
+.git/
+.superpowers/
+docs/superpowers/
+
+# Backend (Python)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
+backend/.venv/
+backend/app.log
+backend/.eastmoney_cookies/
+backend/build/
+backend/dist/
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/my-app.exe
+
+# Tests + build artifacts
+**/tests/
+**/test_*.py
+
+# Editor + OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker 资产自身 (避免 COPY 时递归)
+docker/
