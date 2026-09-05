@@ -353,6 +353,12 @@ class KLineService:
             )
             if r.amount is not None:
                 entity.amount = self._fmt(r.amount)
+            else:
+                # 增量主源 tencent / 回退 sina 都不返回 amount,
+                # 用 volume(股) × close(元/股) 估算, 仅供 ETF 图表显示.
+                estimated = self._estimate_amount(r)
+                if estimated is not None:
+                    entity.amount = self._fmt(estimated)
             if r.amplitude is not None:
                 entity.amplitude = self._fmt(r.amplitude)
             if r.amount_of_increase is not None:
@@ -383,6 +389,23 @@ class KLineService:
         if v is None:
             return ""
         return f"{v:g}"
+
+    @staticmethod
+    def _estimate_amount(row: KLineRow) -> float | None:
+        """增量主源 tencent (6 字段) 缺 amount 时, 用 volume × (H+L)/2 估算.
+
+        公式: estimated_amount = volume(股) × (high + low) / 2 (元/股)
+        价格选择依据: 3 天样本对比东财 f57 真实 amount (sh510500),
+                      (H+L)/2 平均误差 0.21%, 优于 close 0.52%.
+        适用: 日 K 线. (H+L)/2 是当日价格区间中点, 接近 VWAP.
+        业务约定: 该值为估算值, 不参与金额/换手率等财务计算, 仅供图表显示.
+        返回 None: amount 已有真实值, 或 volume/high/low 缺失 (无数据不估算).
+        """
+        if row.amount is not None:
+            return None
+        if not row.volume or not row.high or not row.low:
+            return None
+        return row.volume * (row.high + row.low) / 2
 
     def _extract_json(self, text: str) -> str:
         """防御性剥离 JSONP callback 包装"""

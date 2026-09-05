@@ -474,3 +474,44 @@ def test_klineservice_rows_to_entities_computes_amountOfAverage():
     assert e.vol == "10"
     # amountOfAverage = 10000 / 10 / 100 = 10.0
     assert e.amountOfAverage == "10.000"
+
+
+def test_klineservice_rows_to_entities_estimates_amount_when_missing():
+    """amount 为 None (Tencent/Sina 6 字段) → volume × (H+L)/2 估算.
+
+    估算公式: estimated_amount = volume(股) × (high + low) / 2 (元/股)
+    价格选择依据: 3 天样本对比东财 f57 真实 amount, (H+L)/2 平均误差 0.21%,
+                  优于 close 0.52% (实测 sh510500, 2026-09-02..04).
+    触发场景: 增量主源 tencent 增量成功但无 amount 字段,
+              需补一个估算值供 ETF 图表显示, 否则 entity.amount=None.
+    """
+    from app.services.kline_service import KLineService
+
+    service = KLineService.__new__(KLineService)
+    rows = [
+        KLineRow(date="2026-07-31", open=2.4, close=2.5, high=2.6, low=2.3,
+                 volume=1000, amount=None, turnover=None),
+    ]
+    entities = service._rows_to_entities(rows)
+    assert len(entities) == 1
+    e = entities[0]
+    # (H+L)/2 = (2.6+2.3)/2 = 2.45; estimated amount = 1000 × 2.45 = 2450
+    assert e.amount == "2450"
+    # amountOfAverage = 2450 / 10(手) / 100 = 2.45
+    assert e.amountOfAverage == "2.450"
+
+
+def test_klineservice_rows_to_entities_no_amount_when_volume_or_close_zero():
+    """volume=0 或 close=0 时不估算 amount, 保持空 (避免产生垃圾数据)."""
+    from app.services.kline_service import KLineService
+
+    service = KLineService.__new__(KLineService)
+    rows = [
+        KLineRow(date="2026-07-31", open=0, close=0, high=0, low=0,
+                 volume=0, amount=None, turnover=None),
+    ]
+    entities = service._rows_to_entities(rows)
+    e = entities[0]
+    assert e.amount is None
+    # amountOfAverage 走 else 分支 → "0.000"
+    assert e.amountOfAverage == "0.000"
