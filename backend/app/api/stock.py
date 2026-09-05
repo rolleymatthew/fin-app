@@ -339,7 +339,8 @@ async def get_etf_by_code(code: int = Query(...)):
     响应: {"data": [...日度], "quarterly": [...季度]}
     """
     etf_service, _, _, _ = _services()
-    return await etf_service.get_etf_with_quarterly(code)
+    payload = await etf_service.get_etf_with_quarterly(code)
+    return ResultVO.ok(payload).model_dump()
 
 
 @router.get("/kline/get")
@@ -350,7 +351,8 @@ async def get_kline_by_code(
     end: str | None = Query(default=None),
 ):
     _, kline_service, _, _ = _services()
-    return await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
+    entity = await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
+    return ResultVO.ok(entity).model_dump()
 
 
 @router.post("/kline/refresh")
