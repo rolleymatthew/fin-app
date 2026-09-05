@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date as dt_date
 from decimal import Decimal
+
 from pydantic import BaseModel
 
 

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Type, TypeVar
+from typing import Type, TypeVar
 
 from app.utils.transform import normalize_keys
-
 
 T = TypeVar("T")
 

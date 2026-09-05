@@ -8,14 +8,13 @@ from pathlib import Path
 from typing import List
 
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Color, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from app.constants import spider
 from app.clients.eastmoney import get_eastmoney_client
 from app.clients.eastmoney_datacenter_new import EastmoneyDataNewClient
 from app.config import get_settings
-
+from app.constants import spider
 
 logger = logging.getLogger(__name__)
 from app.constants.cash_flow_type import CashFlowTypeEnum
@@ -38,15 +37,13 @@ from app.models.entities import (
     HKCashFlowEntity,
     HKItemRow,
     HKProfitEntity,
-    KLineEntity,
     ScoreEntity,
     YbRoeEntity,
     ZqhFinEntity,
 )
 from app.repositories.base import MongoRepository
 from app.services.kline_service import KLineService
-from app.utils import date_utils, hk_financial_utils, num_utils
-
+from app.utils import hk_financial_utils, num_utils
 
 # HK item codes from plan section 8.3
 # Balance sheet codes

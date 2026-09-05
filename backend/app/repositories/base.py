@@ -7,7 +7,6 @@ from bson.decimal128 import Decimal128
 
 from app.db import get_db
 
-
 T = TypeVar("T")
 
 

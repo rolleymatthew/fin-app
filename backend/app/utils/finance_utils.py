@@ -4,7 +4,6 @@ from decimal import Decimal
 from typing import List
 
 from app.utils import num_utils
-from app.constants.org_type import UniversalTypeCode
 
 
 def return_on_net_assets(report_date: str, roe_list: List) -> float:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 ETF_REFERER = "http://www.sse.com.cn/"
 
 OFFICIAL_MARKET_SH = "SH"

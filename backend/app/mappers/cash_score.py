@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.constants.cash_flow_type import CashFlowTypeEnum
-from app.utils import num_utils
 from app.models.entities import CashFlowScoreEntity
+from app.utils import num_utils
 
 
 def to_entity(cash_flow_entity) -> CashFlowScoreEntity:

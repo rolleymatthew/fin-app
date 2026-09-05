@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Dict
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Dict, List
 
 from app.mappers.analysis import AnalysisEntityMapper
-from app.mappers.kline_data import quarter_of_kline, month_of_kline, month_of_kline_map, high, low, avarage, avarage_list
+from app.mappers.kline_data import (
+    avarage,
+    avarage_list,
+    high,
+    low,
+    month_of_kline,
+    month_of_kline_map,
+    quarter_of_kline,
+)
 from app.utils import date_utils, num_utils
 
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Dict, List
 
-from app.utils import class_util, date_utils
 from app.constants.report_date_type import latest_quarter_by_year_date
+from app.utils import class_util, date_utils
 
 
 class AnalysisEntityMapper:

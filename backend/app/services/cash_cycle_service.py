@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime
+from datetime import datetime
 from typing import List
 
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import List
 
-from app.utils import finance_utils, num_utils
 from app.models.entities import ZqhFinEntity
+from app.utils import finance_utils, num_utils
 
 
 def creat_for_universal(profit_list: List, cash_flow_list: List, assets_list: List, roe_list: List, sec_code_entity):

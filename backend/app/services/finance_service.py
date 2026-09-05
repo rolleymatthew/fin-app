@@ -69,7 +69,6 @@ from app.models.entities import (
     FinEntity,
     FreeCashFlowEntity,
     ProfitBankEntity,
-    ProfitForecastEntity,
     ProfitInsuranceEntity,
     ProfitSecuritiesEntity,
     ProfitUniversalEntity,
@@ -81,9 +80,9 @@ from app.models.entities import (
     ZqhFinEntity,
 )
 from app.repositories.base import MongoRepository
+from app.services.cash_cycle_service import CashCycleService
 from app.services.kline_service import KLineService
 from app.services.seccode_service import SecCodeService
-from app.services.cash_cycle_service import CashCycleService
 from app.utils import date_utils, finance_utils, num_utils, transform
 
 logger = logging.getLogger(__name__)
