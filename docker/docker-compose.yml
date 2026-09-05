@@ -1,0 +1,51 @@
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server:8.3.4-ubuntu270417
+    container_name: etf-mongodb
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=0
+    ports:
+      - "27017:27017"
+    volumes:
+      - type: bind
+        source: C:\MongoData\data
+        target: /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    container_name: etf-app
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "80:8080"
+    environment:
+      TZ: Asia/Shanghai
+      FIN_MONGO_URI: mongodb://mongodb:27017/stock
+      FIN_MONGO_DB: stock
+      FIN_DATA_DIR: /app/data
+      FIN_EXCEL_DIR: /app/data/pyallinone
+      FIN_LOG_FILE: /app/logs/app.log
+      WEB_DIR: /app/web/dist
+      FIN_COOKIE_DIR: /app/cookies
+    volumes:
+      - type: bind
+        source: D:\stock
+        target: /app/data
+      - app_logs:/app/logs
+      - type: bind
+        source: D:\stock\cookies
+        target: /app/cookies
+
+volumes:
+  app_logs:
