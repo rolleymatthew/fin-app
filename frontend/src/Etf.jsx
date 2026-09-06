@@ -4,7 +4,7 @@ import ReactECharts from 'echarts-for-react';
 import { ETF_CODES, PRESET_STOCK_CODES } from './const';
 import StockCombobox from './StockCombobox';
 import HKFinanceCard from './HKFinanceCard';
-import BankPECard from './BankPECard';
+import BankPBCard from './BankPBCard';
 import { apiGet, apiPost, ApiError } from './api';
 
 const Page = () => {
@@ -1106,7 +1106,7 @@ const Page = () => {
             </div>
 
             <HKFinanceCard />
-            <BankPECard />
+            <BankPBCard />
           </div>
         </div>
 

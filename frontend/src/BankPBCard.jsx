@@ -1,6 +1,6 @@
-// BankPECard.jsx
-// 银行股 PE 时序图卡片（沿用侧栏卡片视觉风格 + HKFinanceCard 自包含模式）。
-// 后端: GET /api/bank/pe/history?code=xxx        (PE 时序)
+// BankPBCard.jsx
+// 银行股 PB（市净率）时序图卡片（沿用侧栏卡片视觉风格 + HKFinanceCard 自包含模式）。
+// 后端: GET /api/bank/pb/history?code=xxx        (PB 时序)
 //       GET /api/sec/search?org_type_code=3     (银行备选列表，仅银行股)
 //       GET /api/sec/search?org_type_code=3&q=  (拼音搜索，限银行)
 // 实时计算、不落库。
@@ -215,12 +215,12 @@ const styles = {
   },
 };
 
-function BankPECard() {
+function BankPBCard() {
   const [isCardOpen, setIsCardOpen] = useState(true);
   const [bankList, setBankList] = useState([]);
   const [selectedCode, setSelectedCode] = useState(null);
   const [selectedName, setSelectedName] = useState(null);
-  const [peHistory, setPeHistory] = useState([]);
+  const [pbHistory, setPbHistory] = useState([]);
   const [listError, setListError] = useState(null);
   const [historyError, setHistoryError] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -240,23 +240,23 @@ function BankPECard() {
       });
   }, []);
 
-  // 选中股票: 拉 PE 时序
+  // 选中股票: 拉 PB 时序
   useEffect(() => {
     if (!selectedCode) {
-      setPeHistory([]);
+      setPbHistory([]);
       setHistoryError(null);
       return;
     }
     setHistoryLoading(true);
-    apiGet(`/api/bank/pe/history?code=${encodeURIComponent(selectedCode)}`)
+    apiGet(`/api/bank/pb/history?code=${encodeURIComponent(selectedCode)}`)
       .then((rows) => {
-        setPeHistory(Array.isArray(rows) ? rows : []);
+        setPbHistory(Array.isArray(rows) ? rows : []);
         setHistoryError(null);
       })
       .catch((err) => {
         const msg = err instanceof ApiError ? err.message : String(err);
-        setHistoryError(msg || '加载 PE 时序失败');
-        setPeHistory([]);
+        setHistoryError(msg || '加载 PB 时序失败');
+        setPbHistory([]);
       })
       .finally(() => setHistoryLoading(false));
   }, [selectedCode]);
@@ -279,7 +279,7 @@ function BankPECard() {
     setIsChartOpen(false);
     setSelectedCode(null);
     setSelectedName(null);
-    setPeHistory([]);
+    setPbHistory([]);
     setHistoryError(null);
   };
 
@@ -290,8 +290,8 @@ function BankPECard() {
   }, [bankList]);
 
   const chartOption = useMemo(() => {
-    const dates = peHistory.map((p) => p.reportDate).filter(Boolean);
-    const pes = peHistory.map((p) => (p.pe == null ? null : Number(p.pe)));
+    const dates = pbHistory.map((p) => p.reportDate).filter(Boolean);
+    const pbs = pbHistory.map((p) => (p.pb == null ? null : Number(p.pb)));
     return {
       grid: { left: '3%', right: '3%', top: '10%', bottom: '15%', containLabel: true },
       tooltip: {
@@ -300,13 +300,13 @@ function BankPECard() {
         formatter: (params) => {
           if (!params || !params.length) return '';
           const idx = params[0].dataIndex;
-          const p = peHistory[idx];
+          const p = pbHistory[idx];
           if (!p) return '';
           const lines = [`<b>${p.reportDate || ''}</b>`];
-          if (p.pe != null) lines.push(`PE: ${p.pe}`);
-          if (p.eps != null) lines.push(`EPS: ${p.eps}`);
+          if (p.pb != null) lines.push(`PB: ${p.pb}`);
+          if (p.bps != null) lines.push(`BPS: ${p.bps}`);
           if (p.close != null) lines.push(`收盘: ${p.close}`);
-          if (p.epsField) lines.push(`(eps=${p.epsField})`);
+          if (p.bpsField) lines.push(`(bps=${p.bpsField})`);
           if (p.error) lines.push(`<span style="color:#b91c1c">${p.error}</span>`);
           return lines.join('<br/>');
         },
@@ -320,16 +320,16 @@ function BankPECard() {
       },
       yAxis: {
         type: 'value',
-        name: '市盈率(PE)',
+        name: '市净率(PB)',
         min: 0,
         axisLabel: { formatter: '{value}', color: '#64748b' },
         splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.25)' } },
       },
       series: [
         {
-          name: 'PE',
+          name: 'PB',
           type: 'line',
-          data: pes,
+          data: pbs,
           smooth: true,
           connectNulls: false,
           itemStyle: { color: '#dc2626' },
@@ -337,18 +337,18 @@ function BankPECard() {
         },
       ],
     };
-  }, [peHistory]);
+  }, [pbHistory]);
 
   return (
     <div style={{ ...styles.card, ...styles.cardGoldCorner }}>
       <div style={styles.cardHeaderRow}>
-        <p style={styles.cardTitle}>银行股 PE 时序</p>
+        <p style={styles.cardTitle}>银行股 PB 时序</p>
         <button
           type="button"
           onClick={() => setIsCardOpen((prev) => !prev)}
           style={styles.cardToggle}
-          aria-label={isCardOpen ? '收起银行PE时序' : '展开银行PE时序'}
-          title={isCardOpen ? '收起银行PE时序' : '展开银行PE时序'}
+          aria-label={isCardOpen ? '收起银行PB时序' : '展开银行PB时序'}
+          title={isCardOpen ? '收起银行PB时序' : '展开银行PB时序'}
         >
           {isCardOpen ? '▾' : '▸'}
         </button>
@@ -410,7 +410,7 @@ function BankPECard() {
               </div>
             </div>
 
-            {/* 右侧：PE 图 —— 选中后在右侧浮层显示，跳出窄侧栏 */}
+            {/* 右侧：PB 图 —— 选中后在右侧浮层显示，跳出窄侧栏 */}
             <div style={styles.rightPane}>
               {selectedCode && !isChartOpen && (
                 <div style={styles.selectedTag}>
@@ -435,10 +435,10 @@ function BankPECard() {
             onClick={closeChart}
             aria-hidden="true"
           />
-          <div style={styles.chartOverlay} role="dialog" aria-label="银行PE时序">
+          <div style={styles.chartOverlay} role="dialog" aria-label="银行PB时序">
             <div style={styles.chartOverlayHeader}>
               <div>
-                <p style={styles.chartOverlayTitle}>银行 PE 时序</p>
+                <p style={styles.chartOverlayTitle}>银行 PB 时序</p>
                 <div style={styles.chartOverlaySub}>
                   <span style={{ fontFamily: 'Consolas, Menlo, monospace', color: '#1d4ed8' }}>
                     {selectedCode}
@@ -465,8 +465,8 @@ function BankPECard() {
               {!historyError &&
                 (historyLoading ? (
                   <div style={styles.chartPlaceholder}>加载中…</div>
-                ) : peHistory.length === 0 ? (
-                  <div style={styles.chartPlaceholder}>暂无 PE 数据</div>
+                ) : pbHistory.length === 0 ? (
+                  <div style={styles.chartPlaceholder}>暂无 PB 数据</div>
                 ) : (
                   <ReactECharts
                     option={chartOption}
@@ -483,4 +483,4 @@ function BankPECard() {
   );
 }
 
-export default BankPECard;
+export default BankPBCard;

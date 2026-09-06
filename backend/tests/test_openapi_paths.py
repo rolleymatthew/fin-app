@@ -32,8 +32,8 @@ EXPECTED_PATHS = {
     # /api/* stock 自身（拆分后 stock.py 只剩这些）
     "/api/one",
     "/api/hk/one",
-    # /api/bank/pe/history（银行股 PE 时序，feat/bank-pe-chart 新增）
-    "/api/bank/pe/history",
+    # /api/bank/pb/history（银行股 PB 时序，feat/bank-pb-chart 新增）
+    "/api/bank/pb/history",
     # /health
     "/health",
     # /api/check （搬到 main.py 后路径前缀不变，保持与 baseline 一致）
