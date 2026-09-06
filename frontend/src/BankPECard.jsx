@@ -57,31 +57,27 @@ const styles = {
     transition: 'max-height 0.25s ease, opacity 0.2s ease',
   },
   splitLayout: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 220px) minmax(0, 1fr)',
-    gap: '10px',
-    alignItems: 'stretch',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
   },
   leftPane: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
-    minHeight: '320px',
+    gap: '6px',
   },
   rightPane: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
-    minHeight: '320px',
+    gap: '6px',
   },
   listWrap: {
     border: '1px solid rgba(148, 163, 184, 0.55)',
     borderRadius: '8px',
     background: '#f8fafc',
     overflowY: 'auto',
-    maxHeight: '260px',
-    flex: '1 1 auto',
-    minHeight: '180px',
+    maxHeight: '160px',
+    minHeight: '120px',
   },
   listHeader: {
     padding: '6px 8px',
@@ -133,20 +129,20 @@ const styles = {
     fontSize: '12px',
   },
   chartWrap: {
-    flex: '1 1 auto',
-    minHeight: '260px',
-    minWidth: 0,
     width: '100%',
+    minWidth: 0,
   },
   chartPlaceholder: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    height: '260px',
+    height: '180px',
     color: 'rgba(15, 23, 42, 0.55)',
-    fontSize: '13px',
+    fontSize: '12px',
     border: '1px dashed rgba(148, 163, 184, 0.55)',
     borderRadius: '8px',
+    textAlign: 'center',
+    padding: '0 8px',
   },
   selectedTag: {
     fontSize: '12px',
@@ -156,6 +152,66 @@ const styles = {
   selectedTagCode: {
     fontFamily: 'Consolas, Menlo, monospace',
     color: '#1d4ed8',
+  },
+  chartOverlay: {
+    position: 'fixed',
+    top: 64,
+    right: 16,
+    width: 'min(720px, calc(100vw - 296px))',
+    height: 'calc(100vh - 96px)',
+    background: '#ffffff',
+    border: '1px solid rgba(148, 163, 184, 0.55)',
+    borderRadius: '12px',
+    boxShadow: '0 16px 48px rgba(15, 23, 42, 0.18)',
+    zIndex: 900,
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '14px',
+    gap: '10px',
+    boxSizing: 'border-box',
+  },
+  chartOverlayHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    paddingBottom: '8px',
+    borderBottom: '1px solid rgba(148, 163, 184, 0.28)',
+  },
+  chartOverlayTitle: {
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#0f172a',
+    margin: 0,
+  },
+  chartOverlaySub: {
+    fontSize: '12px',
+    color: 'rgba(15, 23, 42, 0.6)',
+  },
+  chartOverlayClose: {
+    border: '1px solid rgba(148, 163, 184, 0.6)',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    color: '#0f172a',
+    width: '32px',
+    height: '32px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    lineHeight: 1,
+  },
+  chartOverlayBody: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    width: '100%',
+  },
+  chartOverlayBackdrop: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(15, 23, 42, 0.18)',
+    zIndex: 899,
   },
 };
 
@@ -168,6 +224,7 @@ function BankPECard() {
   const [listError, setListError] = useState(null);
   const [historyError, setHistoryError] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [isChartOpen, setIsChartOpen] = useState(false);
 
   // mount: 拉银行备选列表
   useEffect(() => {
@@ -208,12 +265,22 @@ function BankPECard() {
     if (!item || !item.code) return;
     setSelectedCode(item.code);
     setSelectedName(item.name || '');
+    setIsChartOpen(true);
   };
 
   const pickFromCombobox = ({ code, name }) => {
     if (!code) return;
     setSelectedCode(code);
     setSelectedName(name || '');
+    setIsChartOpen(true);
+  };
+
+  const closeChart = () => {
+    setIsChartOpen(false);
+    setSelectedCode(null);
+    setSelectedName(null);
+    setPeHistory([]);
+    setHistoryError(null);
   };
 
   const sortedBankList = useMemo(() => {
@@ -289,7 +356,7 @@ function BankPECard() {
       <div
         style={{
           ...styles.collapseBody,
-          maxHeight: isCardOpen ? '520px' : '0px',
+          maxHeight: isCardOpen ? '480px' : '0px',
           opacity: isCardOpen ? 1 : 0,
         }}
       >
@@ -343,40 +410,75 @@ function BankPECard() {
               </div>
             </div>
 
-            {/* 右侧：PE 图 */}
+            {/* 右侧：PE 图 —— 选中后在右侧浮层显示，跳出窄侧栏 */}
             <div style={styles.rightPane}>
-              {selectedCode && (
+              {selectedCode && !isChartOpen && (
                 <div style={styles.selectedTag}>
                   当前：<span style={styles.selectedTagCode}>{selectedCode}</span>{' '}
                   {selectedName || ''}
                 </div>
               )}
-              <div style={styles.chartWrap}>
-                {historyError && (
-                  <div style={styles.error}>{historyError}</div>
-                )}
-                {!historyError &&
-                  (selectedCode == null ? (
-                    <div style={styles.chartPlaceholder}>
-                      请从左侧选择银行股（pinyin 搜索 / 备选列表）
-                    </div>
-                  ) : historyLoading ? (
-                    <div style={styles.chartPlaceholder}>加载中…</div>
-                  ) : peHistory.length === 0 ? (
-                    <div style={styles.chartPlaceholder}>暂无 PE 数据</div>
-                  ) : (
-                    <ReactECharts
-                      option={chartOption}
-                      style={{ width: '100%', height: '260px' }}
-                      notMerge
-                      lazyUpdate
-                    />
-                  ))}
-              </div>
+              {!isChartOpen && (
+                <div style={styles.chartPlaceholder}>
+                  请从左侧选择银行股（pinyin 搜索 / 备选列表）
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {isChartOpen && (
+        <>
+          <div
+            style={styles.chartOverlayBackdrop}
+            onClick={closeChart}
+            aria-hidden="true"
+          />
+          <div style={styles.chartOverlay} role="dialog" aria-label="银行PE时序">
+            <div style={styles.chartOverlayHeader}>
+              <div>
+                <p style={styles.chartOverlayTitle}>银行 PE 时序</p>
+                <div style={styles.chartOverlaySub}>
+                  <span style={{ fontFamily: 'Consolas, Menlo, monospace', color: '#1d4ed8' }}>
+                    {selectedCode}
+                  </span>{' '}
+                  {selectedName || ''}
+                  {historyError && (
+                    <span style={{ color: '#b91c1c', marginLeft: '8px' }}>
+                      · {historyError}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeChart}
+                style={styles.chartOverlayClose}
+                aria-label="关闭"
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.chartOverlayBody}>
+              {!historyError &&
+                (historyLoading ? (
+                  <div style={styles.chartPlaceholder}>加载中…</div>
+                ) : peHistory.length === 0 ? (
+                  <div style={styles.chartPlaceholder}>暂无 PE 数据</div>
+                ) : (
+                  <ReactECharts
+                    option={chartOption}
+                    style={{ width: '100%', height: '100%', minHeight: '320px' }}
+                    notMerge
+                    lazyUpdate
+                  />
+                ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
