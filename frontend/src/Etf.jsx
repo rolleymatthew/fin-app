@@ -1,5 +1,5 @@
 // Etf.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { ETF_CODES, PRESET_STOCK_CODES } from './const';
 import StockCombobox from './StockCombobox';
@@ -22,12 +22,34 @@ const Page = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isEtfCardOpen, setIsEtfCardOpen] = useState(true);
   const [isStockCardOpen, setIsStockCardOpen] = useState(false);
+  const [selectedBankCode, setSelectedBankCode] = useState(null);
+  const [selectedBankName, setSelectedBankName] = useState(null);
+  const [bankPbHistory, setBankPbHistory] = useState([]);
+  const [bankPbError, setBankPbError] = useState(null);
   const presetStockCodes = [...PRESET_STOCK_CODES].sort((a, b) => a.code.localeCompare(b.code));
 
   useEffect(() => {
     asyncFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion]); // 添加 shouldCrawl 作为依赖
+
+  useEffect(() => {
+    if (!selectedBankCode) {
+      setBankPbHistory([]);
+      setBankPbError(null);
+      return;
+    }
+    apiGet(`/api/bank/pb/history?code=${encodeURIComponent(selectedBankCode)}`)
+      .then((rows) => {
+        setBankPbHistory(Array.isArray(rows) ? rows : []);
+        setBankPbError(null);
+      })
+      .catch((err) => {
+        const msg = err instanceof ApiError ? err.message : String(err);
+        setBankPbError(msg || '加载 PB 时序失败');
+        setBankPbHistory([]);
+      });
+  }, [selectedBankCode]);
 
   const asyncFetch = async () => {
     try {
@@ -805,6 +827,91 @@ const Page = () => {
     };
   };
 
+  const bankChartOption = useMemo(() => {
+    const dates = bankPbHistory.map((p) => p.reportDate).filter(Boolean);
+    const pbs = bankPbHistory.map((p) => (p.pb == null ? null : Number(p.pb)));
+    const closes = bankPbHistory.map((p) => (p.close == null ? null : Number(p.close)));
+    return {
+      grid: { left: '3%', right: '3%', top: '12%', bottom: '15%', containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+        formatter: (params) => {
+          if (!params || !params.length) return '';
+          const idx = params[0].dataIndex;
+          const p = bankPbHistory[idx];
+          if (!p) return '';
+          const lines = [`<b>${p.reportDate ? p.reportDate.slice(0, 10) : ''}</b>`];
+          if (p.pb != null) lines.push(`PB: ${p.pb}`);
+          if (p.bps != null) lines.push(`BPS: ${p.bps}`);
+          if (p.close != null) lines.push(`收盘: ${p.close}`);
+          if (p.bpsField) lines.push(`(bps=${p.bpsField})`);
+          if (p.error) lines.push(`<span style="color:#b91c1c">${p.error}</span>`);
+          return lines.join('<br/>');
+        },
+      },
+      legend: {
+        data: ['市净率(PB)', '收盘价(元)'],
+        bottom: 10,
+        textStyle: { color: '#475569' },
+      },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        axisLabel: { color: '#64748b' },
+        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.5)' } },
+        axisPointer: { type: 'shadow' },
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: '市净率(PB)',
+          min: 0,
+          position: 'left',
+          axisLabel: { formatter: '{value}', color: '#64748b' },
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.25)' } },
+        },
+        {
+          type: 'value',
+          name: '收盘价(元)',
+          min: 0,
+          position: 'right',
+          axisLabel: { formatter: '{value}', color: '#64748b' },
+          splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: '市净率(PB)',
+          type: 'line',
+          data: pbs,
+          yAxisIndex: 0,
+          smooth: true,
+          connectNulls: false,
+          itemStyle: { color: '#dc2626' },
+          lineStyle: { width: 2, color: '#dc2626' },
+        },
+        {
+          name: '收盘价(元)',
+          type: 'line',
+          data: closes,
+          yAxisIndex: 1,
+          smooth: true,
+          connectNulls: false,
+          itemStyle: { color: '#2563eb' },
+          lineStyle: { width: 2, color: '#2563eb' },
+        },
+      ],
+    };
+  }, [bankPbHistory]);
+
+  const closeBankView = () => {
+    setSelectedBankCode(null);
+    setSelectedBankName(null);
+    setBankPbHistory([]);
+    setBankPbError(null);
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.layout}>
@@ -1106,7 +1213,13 @@ const Page = () => {
             </div>
 
             <HKFinanceCard />
-            <BankPBCard />
+            <BankPBCard
+              selectedBankCode={selectedBankCode}
+              onSelectBank={({ code, name }) => {
+                setSelectedBankCode(code);
+                setSelectedBankName(name || null);
+              }}
+            />
           </div>
         </div>
 
@@ -1121,8 +1234,65 @@ const Page = () => {
             {isSidebarOpen ? '◀' : '▶'}
           </button>
           <div style={{ ...styles.card, ...styles.cardGoldCorner, ...styles.chartWrap }}>
+            {selectedBankCode && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 16px 6px',
+                  borderBottom: '1px solid rgba(148, 163, 184, 0.28)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
+                    银行 PB 时序 ·{' '}
+                    <span
+                      style={{
+                        fontFamily: 'Consolas, Menlo, monospace',
+                        color: '#1d4ed8',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {selectedBankCode}
+                    </span>{' '}
+                    {selectedBankName || ''}
+                  </div>
+                  {bankPbError && (
+                    <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '2px' }}>
+                      {bankPbError}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBankView}
+                  style={{
+                    border: '1px solid rgba(148, 163, 184, 0.6)',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    color: '#0f172a',
+                    width: '32px',
+                    height: '32px',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    lineHeight: 1,
+                  }}
+                  aria-label="关闭银行视图"
+                  title="关闭银行视图，回到 ETF"
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div style={{ flex: 1, minHeight: 0 }}>
-              <ReactECharts option={getOption()} style={{ width: '100%', height: '100%' }} />
+              <ReactECharts
+                key={selectedBankCode || 'etf'}
+                option={selectedBankCode ? bankChartOption : getOption()}
+                style={{ width: '100%', height: '100%' }}
+                notMerge
+                lazyUpdate
+              />
             </div>
           </div>
         </div>
