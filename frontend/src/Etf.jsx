@@ -26,7 +26,21 @@ const Page = () => {
   const [selectedBankName, setSelectedBankName] = useState(null);
   const [bankPbHistory, setBankPbHistory] = useState([]);
   const [bankPbError, setBankPbError] = useState(null);
+  const [bankPbDuration, setBankPbDuration] = useState('1825'); // 默认 5 年（天）
   const presetStockCodes = [...PRESET_STOCK_CODES].sort((a, b) => a.code.localeCompare(b.code));
+
+  const BANK_PB_DURATION_OPTIONS = [
+    { value: '180', label: '6个月' },
+    { value: '365', label: '1年' },
+    { value: '730', label: '2年' },
+    { value: '1095', label: '3年' },
+    { value: '1825', label: '5年' },
+    { value: '2190', label: '6年' },
+    { value: '2555', label: '7年' },
+    { value: '2920', label: '8年' },
+    { value: '3285', label: '9年' },
+    { value: '3650', label: '10年' },
+  ];
 
   useEffect(() => {
     asyncFetch();
@@ -828,9 +842,16 @@ const Page = () => {
   };
 
   const bankChartOption = useMemo(() => {
-    const dates = bankPbHistory.map((p) => p.reportDate).filter(Boolean);
-    const pbs = bankPbHistory.map((p) => (p.pb == null ? null : Number(p.pb)));
-    const closes = bankPbHistory.map((p) => (p.close == null ? null : Number(p.close)));
+    const days = Number(bankPbDuration) || 3650;
+    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    const filtered = bankPbHistory.filter((p) => {
+      if (!p || !p.reportDate) return false;
+      const t = Date.parse(String(p.reportDate).slice(0, 10));
+      return Number.isFinite(t) && t >= cutoffMs;
+    });
+    const dates = filtered.map((p) => p.reportDate).filter(Boolean);
+    const pbs = filtered.map((p) => (p.pb == null ? null : Number(p.pb)));
+    const closes = filtered.map((p) => (p.close == null ? null : Number(p.close)));
     return {
       grid: { left: '3%', right: '3%', top: '12%', bottom: '15%', containLabel: true },
       tooltip: {
@@ -839,7 +860,7 @@ const Page = () => {
         formatter: (params) => {
           if (!params || !params.length) return '';
           const idx = params[0].dataIndex;
-          const p = bankPbHistory[idx];
+          const p = filtered[idx];
           if (!p) return '';
           const lines = [`<b>${p.reportDate ? p.reportDate.slice(0, 10) : ''}</b>`];
           if (p.pb != null) lines.push(`PB: ${p.pb}`);
@@ -903,7 +924,7 @@ const Page = () => {
         },
       ],
     };
-  }, [bankPbHistory]);
+  }, [bankPbHistory, bankPbDuration]);
 
   const closeBankView = () => {
     setSelectedBankCode(null);
@@ -1242,6 +1263,8 @@ const Page = () => {
                   justifyContent: 'space-between',
                   padding: '10px 16px 6px',
                   borderBottom: '1px solid rgba(148, 163, 184, 0.28)',
+                  gap: '12px',
+                  flexWrap: 'wrap',
                 }}
               >
                 <div>
@@ -1264,25 +1287,51 @@ const Page = () => {
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={closeBankView}
-                  style={{
-                    border: '1px solid rgba(148, 163, 184, 0.6)',
-                    background: '#f8fafc',
-                    borderRadius: '8px',
-                    color: '#0f172a',
-                    width: '32px',
-                    height: '32px',
-                    cursor: 'pointer',
-                    fontSize: '16px',
-                    lineHeight: 1,
-                  }}
-                  aria-label="关闭银行视图"
-                  title="关闭银行视图，回到 ETF"
-                >
-                  ×
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <select
+                    id="bank-pb-duration"
+                    value={bankPbDuration}
+                    onChange={(e) => setBankPbDuration(e.target.value)}
+                    style={{
+                      height: 32,
+                      padding: '0 10px',
+                      borderRadius: 6,
+                      border: '1px solid #d9dee5',
+                      background: '#fff',
+                      color: '#0f172a',
+                      fontSize: 13,
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                    aria-label="PB 时长"
+                    title="PB 时长"
+                  >
+                    {BANK_PB_DURATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={closeBankView}
+                    style={{
+                      border: '1px solid rgba(148, 163, 184, 0.6)',
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                      color: '#0f172a',
+                      width: '32px',
+                      height: '32px',
+                      cursor: 'pointer',
+                      fontSize: '16px',
+                      lineHeight: 1,
+                    }}
+                    aria-label="关闭银行视图"
+                    title="关闭银行视图，回到 ETF"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0 }}>
