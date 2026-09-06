@@ -90,6 +90,13 @@ class MongoRepository(Generic[T]):
             ret.append(self.model.model_validate(self._from_bson(doc)))
         return ret
 
+    async def find_all_by_security_code_order_by_report_date_asc(self, security_code: str) -> List[T]:  # noqa: E501
+        cursor = self.collection.find({"securityCode": security_code}).sort("reportDate", 1)
+        ret = []
+        async for doc in cursor:
+            ret.append(self.model.model_validate(self._from_bson(doc)))
+        return ret
+
     async def find_all_by_sec_code(self, sec_code: int) -> List[T]:
         cursor = self.collection.find({"secCode": sec_code})
         ret = []

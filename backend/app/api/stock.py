@@ -374,3 +374,30 @@ async def refresh_kline(code: int = Query(...)):
             "count": len(entity.klines) if entity.klines else 0,
         }
     )
+
+
+@router.get("/bank/pe/history")
+async def get_bank_pe_history(code: str = Query(...)) -> dict:
+    """银行股 PE 时序（按报表日升序）。仅 orgTypeCode == "3"（银行）。
+
+    实时计算、不落库：
+      PE(t) = close(t) / EPS(t)
+    其中 EPS 直读 profit_bank 的 EPS 候选字段（详见 BankPEService）。
+    """
+    from app.constants.org_type import BankTypeCode
+    from app.models.entities import ProfitBankEntity
+    from app.repositories.base import MongoRepository
+    from app.services.bank_pe_service import BankPEService
+
+    _, _, seccode_service, _ = _services()
+    entity = await seccode_service.sec_code_entity_by_id(code)
+    if not entity or getattr(entity, "orgTypeCode", None) != BankTypeCode:
+        return ResultVO.fail(code=400, message="非银行 orgType，不适用").model_dump()
+
+    pe_service = BankPEService(
+        profit_bank_repo=MongoRepository(ProfitBankEntity),
+        kline_service=_services()[1],
+        sec_code_service=seccode_service,
+    )
+    rows = await pe_service.calculate_pe_history(code)
+    return ResultVO.ok(rows).model_dump()
