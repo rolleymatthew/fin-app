@@ -188,17 +188,21 @@ class SecCodeService:
         self,
         q: str | None = None,
         limit: int = 200,
+        org_type_code: str | None = None,
     ) -> list[dict]:
         """在 sec_code 集合中按 代码 / 拼音首字母 / 名称 模糊搜索。
 
         - listingState == "0" 仅返回正常上市（约 5200+ 家）
         - 命中优先级：代码精确 > 代码前缀 > 拼音首字母前缀 > 名称包含
+        - org_type_code 为 None 时不过滤；传入时按公司类型（如 "3"=银行）筛选
         """
         max_limit = 1000
         limit = max(1, min(int(limit or 200), max_limit))
         query = (q or "").strip()
 
         base_filter: dict = {"listingState": "0"}
+        if org_type_code is not None:
+            base_filter["orgTypeCode"] = org_type_code
 
         projection = {
             "_id": 1,

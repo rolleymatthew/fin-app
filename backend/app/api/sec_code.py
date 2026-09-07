@@ -20,10 +20,17 @@ def _service() -> SecCodeService:
 async def search(
     q: str | None = Query(default=None, description="代码 / 拼音首字母 / 名称"),
     limit: int = Query(default=200, ge=1, le=1000),
+    org_type_code: str | None = Query(
+        default=None,
+        description="公司类型代码: 1=证券 2=保险 3=银行 4=通用",
+    ),
 ) -> dict:
-    """按 拼音首字母 / 代码 / 名称 模糊搜索上市公司，供下拉框使用。"""
+    """按 拼音首字母 / 代码 / 名称 模糊搜索上市公司，供下拉框使用。
+
+    org_type_code 为可选过滤项，传 "3" 仅返回银行股，不传则返回所有上市股票。
+    """
     svc = _service()
-    rows = await svc.search_stocks(q=q, limit=limit)
+    rows = await svc.search_stocks(q=q, limit=limit, org_type_code=org_type_code)
     return ResultVO.ok(rows).model_dump()
 
 

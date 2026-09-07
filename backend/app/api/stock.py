@@ -374,3 +374,30 @@ async def refresh_kline(code: int = Query(...)):
             "count": len(entity.klines) if entity.klines else 0,
         }
     )
+
+
+@router.get("/bank/pb/history")
+async def get_bank_pb_history(code: str = Query(...)) -> dict:
+    """银行股 PB（市净率）时序（按报表日升序）。仅 orgTypeCode == "3"（银行）。
+
+    实时计算、不落库：
+      PB(t) = close(t) / BPS(t)
+    其中 BPS 直读 assets_bank 的 BPS 候选字段（详见 BankPBService）。
+    """
+    from app.constants.org_type import BankTypeCode
+    from app.models.entities import AssetsBankEntity
+    from app.repositories.base import MongoRepository
+    from app.services.bank_pb_service import BankPBService
+
+    _, _, seccode_service, _ = _services()
+    entity = await seccode_service.sec_code_entity_by_id(code)
+    if not entity or getattr(entity, "orgTypeCode", None) != BankTypeCode:
+        return ResultVO.fail(code=400, message="非银行 orgType，不适用").model_dump()
+
+    pb_service = BankPBService(
+        assets_bank_repo=MongoRepository(AssetsBankEntity),
+        kline_service=_services()[1],
+        sec_code_service=seccode_service,
+    )
+    rows = await pb_service.calculate_pb_history(code)
+    return ResultVO.ok(rows).model_dump()
