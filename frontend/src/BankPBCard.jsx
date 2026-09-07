@@ -2,11 +2,10 @@
 // 银行股 PB（市净率）选择卡片（沿用侧栏卡片视觉风格 + HKFinanceCard 自包含模式）。
 // 仅作 picker：通过 onSelectBank 回调通知父组件，主图区由父组件（Etf.jsx）渲染。
 // 后端: GET /api/sec/search?org_type_code=3&limit=1000 (银行备选列表)
-//       GET /api/sec/search?org_type_code=3&q=        (拼音搜索，限银行)
+//       GET /api/one?code=...&crawl=true              (批量下载银行股数据)
 // 主图组件拉: GET /api/bank/pb/history?code=xxx       (由 Etf.jsx 触发)
 /* eslint-disable react/prop-types */
 import { useEffect, useState } from 'react';
-import StockCombobox from './StockCombobox';
 import { apiGet, ApiError } from './api';
 
 const styles = {
@@ -132,12 +131,31 @@ const styles = {
     fontFamily: 'Consolas, Menlo, monospace',
     color: '#1d4ed8',
   },
+  buttonUnified: {
+    width: '100%',
+    height: 32,
+    padding: '0 14px',
+    borderRadius: 6,
+    background: '#3b5b7a',
+    color: '#fff',
+    border: 'none',
+    fontSize: 13,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    transition: 'background 0.15s',
+  },
+  buttonUnifiedHover: '#324d68',
+  buttonUnifiedDisabled: {
+    opacity: 0.55,
+    cursor: 'not-allowed',
+  },
 };
 
 function BankPBCard({ selectedBankCode = null, onSelectBank = () => {} }) {
   const [isCardOpen, setIsCardOpen] = useState(true);
   const [bankList, setBankList] = useState([]);
   const [listError, setListError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     apiGet('/api/sec/search?org_type_code=3&limit=1000')
@@ -157,9 +175,29 @@ function BankPBCard({ selectedBankCode = null, onSelectBank = () => {} }) {
     onSelectBank({ code: item.code, name: item.name || '' });
   };
 
-  const pickFromCombobox = ({ code, name }) => {
-    if (!code) return;
-    onSelectBank({ code, name: name || '' });
+  const handleDownloadBankData = async () => {
+    const codes = bankList.map((item) => item.code).filter((code) => !!code);
+    if (codes.length === 0) {
+      alert('银行股列表为空，无法下载！');
+      return;
+    }
+    const url = `/api/one?code=${codes.join(',')}&crawl=true`;
+    setDownloading(true);
+    try {
+      await apiGet(url);
+      console.log('Bank Stock Data fetched:', url);
+      alert('成功调用后台接口：' + url);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to fetch bank stock data:', error);
+        alert('调用后台接口失败！');
+      }
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const sortedBankList = (() => {
@@ -192,12 +230,28 @@ function BankPBCard({ selectedBankCode = null, onSelectBank = () => {} }) {
         <div style={{ paddingTop: '6px' }}>
           <div style={styles.splitLayout}>
             <div style={styles.leftPane}>
-              <StockCombobox
-                apiUrl="/api/sec/search?org_type_code=3"
-                width="100%"
-                placeholder="代码/拼音/名称"
-                onSelect={pickFromCombobox}
-              />
+              <button
+                type="button"
+                onClick={handleDownloadBankData}
+                disabled={downloading || bankList.length === 0}
+                style={{
+                  ...styles.buttonUnified,
+                  ...(downloading || bankList.length === 0
+                    ? styles.buttonUnifiedDisabled
+                    : null),
+                }}
+                onMouseEnter={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.background = styles.buttonUnifiedHover;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = styles.buttonUnified.background;
+                }}
+                title="批量下载全部备选银行股数据（抓东财）"
+              >
+                {downloading ? '下载中…' : '下载银行数据'}
+              </button>
               <div style={styles.listWrap}>
                 <div style={styles.listHeader}>
                   {bankList.length > 0
