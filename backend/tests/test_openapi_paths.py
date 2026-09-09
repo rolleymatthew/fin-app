@@ -19,6 +19,7 @@ EXPECTED_PATHS = {
     # /api/etf 原有（一直就在 etf.py）
     "/api/etf/search",
     "/api/etf/backfill-pinyin",
+    "/api/etf/szse/import-csv",
     # /api/sec/* （sec_code.py 一直独立，不动）
     "/api/sec/search",
     "/api/sec/backfill-pinyin",
