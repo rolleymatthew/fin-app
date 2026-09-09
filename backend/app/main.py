@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +17,8 @@ from app.db import ensure_indexes
 from app.exception_handlers.result_envelope import register_result_exception_handlers
 from app.middleware.result_envelope import ResultEnvelopeMiddleware
 from app.models.result import ResultVO
+from app.services.etf_csv_watcher import start_watcher, stop_watcher
+from app.services.etf_service import EtfService
 from app.services.finance_service import FinanceService
 
 settings = get_settings()
@@ -33,7 +37,25 @@ if _debug_url not in {"1", "true", "yes", "y", "on"}:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-app = FastAPI(title=settings.app_name)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await ensure_indexes()
+    watcher_task: asyncio.Task | None = None
+    if bool(getattr(settings, "etf_csv_auto_import", False)):
+        service = EtfService()
+        watcher_task = start_watcher(settings, service)
+        logging.getLogger("app.startup").info(
+            "[etf_csv_watcher] started; dir=%s poll=%ss",
+            settings.etf_csv_dir,
+            settings.etf_csv_poll_seconds,
+        )
+    try:
+        yield
+    finally:
+        await stop_watcher(watcher_task)
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(ResultEnvelopeMiddleware)
 register_result_exception_handlers(app)
@@ -75,11 +97,6 @@ async def check_finance_data(
 WEB_DIR = os.environ.get("WEB_DIR", "/app/web/dist")
 if os.path.isdir(WEB_DIR):
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
-
-
-@app.on_event("startup")
-async def _startup():
-    await ensure_indexes()
 
 
 @app.middleware("http")
