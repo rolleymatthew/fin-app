@@ -59,4 +59,5 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     settings = Settings()
     Path(settings.excel_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.etf_csv_dir).mkdir(parents=True, exist_ok=True)
     return settings
