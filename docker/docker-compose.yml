@@ -51,7 +51,6 @@ services:
       - type: bind
         source: D:\stock\etf_data
         target: /app/etf_csv
-        create_host_path: true
 
 volumes:
   app_logs:
