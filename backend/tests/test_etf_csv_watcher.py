@@ -129,3 +129,26 @@ async def test_tick_empty_dir(tmp_path):
     r = await tick(settings, service)
     assert r["scanned"] == 0
     service._import_szse_csv.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tick_keeps_file_on_mongo_failure(tmp_path):
+    """_import_szse_csv 抛异常时，文件留在原位且 state 不更新"""
+    csv_dir = tmp_path / "in"
+    csv_dir.mkdir()
+    f = csv_dir / "表格_20260908.csv"
+    f.write_text("排名,代码,简称,规模 (亿),管理人\n1,159792,A,1.0,X\n", encoding="utf-8-sig")
+
+    settings = MagicMock()
+    settings.etf_csv_dir = str(csv_dir)
+
+    service = MagicMock()
+    service._import_szse_csv = AsyncMock(side_effect=RuntimeError("mongo down"))
+
+    r = await tick(settings, service)
+
+    assert r["errors"] == 1
+    assert r["imported"] == 0
+    assert (csv_dir / "表格_20260908.csv").exists(), "文件必须留在原位（重试机制）"
+    assert not (csv_dir / "processed").exists() or not list((csv_dir / "processed").glob("*.csv")), "未归档"
+    assert not (csv_dir / ".last_import.json").exists(), "未写状态"

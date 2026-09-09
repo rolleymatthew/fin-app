@@ -17,7 +17,6 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.clients.szse_etf_csv import parse_csv  # noqa: F401  用于 Task 4
 from app.config import get_settings
 from app.models.result import ResultVO
 from app.services.etf_service import EtfService

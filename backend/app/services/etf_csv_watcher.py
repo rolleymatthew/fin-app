@@ -12,7 +12,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass
-from datetime import date, timedelta  # noqa: F401
+from datetime import date
 from pathlib import Path
 from typing import Any
 

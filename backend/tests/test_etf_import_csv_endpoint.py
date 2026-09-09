@@ -14,7 +14,7 @@ from app.main import app
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.fixture
@@ -81,3 +81,27 @@ async def test_import_csv_invalid_filename_pattern(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_import_csv_mongo_failure_returns_error_envelope(client, tmp_csv_dir):
+    """_import_szse_csv 抛异常时，endpoint 返回 success=false 的 ResultVO envelope"""
+    (tmp_csv_dir / "表格_20260908.csv").write_text(
+        "排名,代码,简称,规模 (亿),管理人\n1,159792,A,1.0,X\n",
+        encoding="utf-8-sig",
+    )
+    with patch("app.api.etf.get_settings") as gs, \
+         patch("app.api.etf._service") as svc:
+        gs.return_value.etf_csv_dir = str(tmp_csv_dir)
+        service = MagicMock()
+        service._import_szse_csv = AsyncMock(side_effect=RuntimeError("mongo down"))
+        svc.return_value = service
+
+        resp = client.post(
+            "/api/etf/szse/import-csv",
+            json={"filename": "表格_20260908.csv"},
+        )
+
+    body = resp.json()
+    assert body["success"] is False
+    assert body["code"] != 0  # non-success code
