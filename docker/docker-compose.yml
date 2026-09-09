@@ -38,6 +38,8 @@ services:
       FIN_LOG_FILE: /app/logs/app.log
       WEB_DIR: /app/web/dist
       FIN_COOKIE_DIR: /app/cookies
+      FIN_ETF_CSV_DIR: /app/etf_csv
+      FIN_ETF_CSV_AUTO_IMPORT: "true"
     volumes:
       - type: bind
         source: D:\stock
@@ -46,6 +48,9 @@ services:
       - type: bind
         source: D:\stock\cookies
         target: /app/cookies
+      - type: bind
+        source: D:\stock\etf_data
+        target: /app/etf_csv
 
 volumes:
   app_logs:
