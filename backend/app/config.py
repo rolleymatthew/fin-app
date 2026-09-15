@@ -49,15 +49,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FIN_KLINE_FALLBACKS", "KLINE_FALLBACKS"),
     )
 
-    # SZSE ETF 日终 CSV 自动入库（豆包定时任务下载文件）
-    etf_csv_dir: str = "./data/etf_csv"  # env: FIN_ETF_CSV_DIR
-    etf_csv_poll_seconds: int = 300      # env: FIN_ETF_CSV_POLL_SECONDS 默认 5 分钟
-    etf_csv_auto_import: bool = False    # env: FIN_ETF_CSV_AUTO_IMPORT 默认关闭
+    # SZSE ETF 日终 JSON 自动入库（豆包定时任务下载文件）
+    etf_data_dir: str = "./data/etf_data"  # env: FIN_ETF_DATA_DIR
+    etf_data_poll_seconds: int = 300      # env: FIN_ETF_DATA_POLL_SECONDS 默认 5 分钟
+    etf_data_auto_import: bool = False    # env: FIN_ETF_DATA_AUTO_IMPORT 默认关闭
 
 
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
     Path(settings.excel_dir).mkdir(parents=True, exist_ok=True)
-    Path(settings.etf_csv_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.etf_data_dir).mkdir(parents=True, exist_ok=True)
     return settings

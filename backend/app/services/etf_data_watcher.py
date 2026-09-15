@@ -1,8 +1,8 @@
-"""轮询守护：扫描 FIN_ETF_CSV_DIR 下的 表格_*.csv 文件并自动 upsert 到 Mongo etf 集合。
+"""轮询守护：扫描 FIN_ETF_DATA_DIR 下的 sz_etf_YYYY-MM-DD.json 文件并自动 upsert 到 Mongo etf 集合。
 
 触发方式：main.py lifespan 启动 asyncio task，每 N 秒一次。
-状态：<etf_csv_dir>/.last_import.json 记录 {filename: mtime_float}，避免重复处理。
-归档：成功导入后 shutil.move 到 <etf_csv_dir>/processed/。
+状态：<etf_data_dir>/.last_import.json 记录 {filename: mtime_float}，避免重复处理。
+归档：成功导入后 shutil.move 到 <etf_data_dir>/processed/。
 """
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-_FILENAME_PATTERN = re.compile(r"^表格_(\d{8})\.csv$")
+_FILENAME_PATTERN = re.compile(r"^sz_etf_(\d{4}-\d{2}-\d{2})\.json$")
 
 
 @dataclass
 class StateStore:
-    """<etf_csv_dir>/.last_import.json 读写封装"""
+    """<etf_data_dir>/.last_import.json 读写封装"""
 
     path: Path
 
@@ -57,27 +57,26 @@ def _stat_date_from_filename(filename: str) -> date | None:
     m = _FILENAME_PATTERN.match(filename)
     if not m:
         return None
-    s = m.group(1)
     try:
-        return date(int(s[:4]), int(s[4:6]), int(s[6:]))
+        return date.fromisoformat(m.group(1))
     except ValueError:
         return None
 
 
-def _archive_path(csv_dir: Path, filename: str) -> Path:
-    return csv_dir / "processed" / filename
+def _archive_path(data_dir: Path, filename: str) -> Path:
+    return data_dir / "processed" / filename
 
 
 async def tick(settings: Any, service: Any) -> dict[str, int]:
     """单次扫描。返回 {scanned, imported, skipped, errors}。"""
-    csv_dir = Path(settings.etf_csv_dir)
-    csv_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = Path(settings.etf_data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    state = StateStore(csv_dir / ".last_import.json")
-    processed_dir = csv_dir / "processed"
+    state = StateStore(data_dir / ".last_import.json")
+    processed_dir = data_dir / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
 
-    files = sorted(csv_dir.glob("表格_*.csv"))
+    files = sorted(data_dir.glob("sz_etf_*.json"))
     today = date.today()
     imported = 0
     skipped = 0
@@ -89,11 +88,11 @@ async def tick(settings: Any, service: Any) -> dict[str, int]:
         filename = fp.name
         stat_date = _stat_date_from_filename(filename)
         if stat_date is None:
-            logger.warning("[etf_csv_watcher] skip bad filename: %s", filename)
+            logger.warning("[etf_data_watcher] skip bad filename: %s", filename)
             skipped += 1
             continue
         if stat_date > today:
-            logger.warning("[etf_csv_watcher] skip future date: %s", filename)
+            logger.warning("[etf_data_watcher] skip future date: %s", filename)
             skipped += 1
             continue
         mtime = fp.stat().st_mtime
@@ -102,23 +101,23 @@ async def tick(settings: Any, service: Any) -> dict[str, int]:
 
         try:
             content = fp.read_bytes()
-            report = await service._import_szse_csv(content, stat_date)
+            report = await service._import_szse_json(content, stat_date)
             imported += report.get("imported", 0)
             skipped += report.get("skipped", 0)
             if report.get("imported", 0) + report.get("skipped", 0) == 0:
-                logger.error("[etf_csv_watcher] zero rows for %s; not archiving", filename)
+                logger.error("[etf_data_watcher] zero rows for %s; not archiving", filename)
                 errors += 1
                 continue
-            shutil.move(str(fp), str(_archive_path(csv_dir, filename)))
+            shutil.move(str(fp), str(_archive_path(data_dir, filename)))
             state.set(filename, mtime)
             logger.info(
-                "[etf_csv_watcher] %s: imported=%d skipped=%d → processed/",
+                "[etf_data_watcher] %s: imported=%d skipped=%d → processed/",
                 filename,
                 report.get("imported", 0),
                 report.get("skipped", 0),
             )
         except Exception as exc:  # noqa: BLE001
-            logger.exception("[etf_csv_watcher] failed to import %s: %s", filename, exc)
+            logger.exception("[etf_data_watcher] failed to import %s: %s", filename, exc)
             errors += 1
 
     return {"scanned": scanned, "imported": imported, "skipped": skipped, "errors": errors}
@@ -128,15 +127,15 @@ def start_watcher(settings: Any, service: Any) -> asyncio.Task:
     """lifespan 启动时调用。返回后台 task，便于关闭时 cancel。"""
 
     async def _loop():
-        poll = int(getattr(settings, "etf_csv_poll_seconds", 300))
+        poll = int(getattr(settings, "etf_data_poll_seconds", 300))
         while True:
             try:
                 await tick(settings, service)
             except Exception as exc:  # noqa: BLE001
-                logger.exception("[etf_csv_watcher] tick failed: %s", exc)
+                logger.exception("[etf_data_watcher] tick failed: %s", exc)
             await asyncio.sleep(poll)
 
-    return asyncio.create_task(_loop(), name="etf-csv-watcher")
+    return asyncio.create_task(_loop(), name="etf-data-watcher")
 
 
 async def stop_watcher(task: asyncio.Task | None) -> None:

@@ -17,7 +17,7 @@ from app.db import ensure_indexes
 from app.exception_handlers.result_envelope import register_result_exception_handlers
 from app.middleware.result_envelope import ResultEnvelopeMiddleware
 from app.models.result import ResultVO
-from app.services.etf_csv_watcher import start_watcher, stop_watcher
+from app.services.etf_data_watcher import start_watcher, stop_watcher
 from app.services.etf_service import EtfService
 from app.services.finance_service import FinanceService
 
@@ -41,13 +41,13 @@ if _debug_url not in {"1", "true", "yes", "y", "on"}:
 async def lifespan(_app: FastAPI):
     await ensure_indexes()
     watcher_task: asyncio.Task | None = None
-    if bool(getattr(settings, "etf_csv_auto_import", False)):
+    if bool(getattr(settings, "etf_data_auto_import", False)):
         service = EtfService()
         watcher_task = start_watcher(settings, service)
         logging.getLogger("app.startup").info(
-            "[etf_csv_watcher] started; dir=%s poll=%ss",
-            settings.etf_csv_dir,
-            settings.etf_csv_poll_seconds,
+            "[etf_data_watcher] started; dir=%s poll=%ss",
+            settings.etf_data_dir,
+            settings.etf_data_poll_seconds,
         )
     try:
         yield

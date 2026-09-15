@@ -490,23 +490,23 @@ class EtfService:
         )
         return {"updated": updated, "skipped": skipped, "only_missing": only_missing}
 
-    # ===== SZSE ETF 日终 CSV 自动入库（豆包定时任务下载） =====
+    # ===== SZSE ETF 日终 JSON 自动入库（豆包定时任务下载） =====
 
-    async def _import_szse_csv(self, content: bytes, stat_date: date) -> dict:
-        """解析豆包下载的 SZSE ETF CSV 文件并 upsert 到 etf 集合。
+    async def _import_szse_json(self, content: bytes, stat_date: date) -> dict:
+        """解析豆包下载的 SZSE ETF JSON 文件并 upsert 到 etf 集合。
 
         Args:
-            content: CSV 字节流（UTF-8 BOM）
+            content: JSON 字节流（UTF-8）
             stat_date: 文件名提取的交易日（YYYY-MM-DD）
 
         Returns:
             {"imported": int, "skipped": int, "stat_date": str}
 
-        复用既有 etf_szse_dto_to_entity mapper；manager 字段不入库（已内嵌于 secName）。
+        复用既有 etf_szse_dto_to_entity mapper；mgr 字段不入库（已内嵌于 secName）。
         """
-        from app.clients.szse_etf_csv import parse_csv
+        from app.clients.szse_etf_json import parse_json
 
-        rows = parse_csv(content, stat_date)
+        rows = parse_json(content, stat_date)
         entities = [etf_szse_dto_to_entity(r, stat_date) for r in rows]
         valid = [e for e in entities if e is not None]
         await self.repo.save_many(valid)
