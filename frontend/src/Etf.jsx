@@ -269,6 +269,29 @@ const Page = () => {
     }
   };
 
+  const handleImportLatestSzseJson = async () => {
+    try {
+      const data = await apiPost('/api/etf/szse/import-latest');
+      const lines = [
+        `文件: ${data?.filename ?? '?'} (${data?.stat_date ?? '?'})`,
+        `本次 upsert: ${data?.imported ?? '?'} 条 / 跳过 ${data?.skipped ?? '?'}`,
+        `DB 当天已有 ${data?.pre_existing ?? '?'} 条被覆盖`,
+        `模式: ${data?.mode ?? 'upsert'}`,
+      ];
+      console.log('import-latest:', data);
+      alert(lines.join('\n'));
+      setEtfDataVersion((v) => v + 1);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        console.warn('[api]', error.errorType, error.path, error.code, error.message);
+        alert(error.message);
+      } else {
+        console.error('Failed to import latest szse json:', error);
+        alert('导入本地 JSON 失败！');
+      }
+    }
+  };
+
   const handleFetchStockData = async () => {
     let url = `/api/one?crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
 
@@ -1079,6 +1102,13 @@ const Page = () => {
                       onMouseLeave={(e) => (e.currentTarget.style.background = styles.buttonUnified.background)}
                     >
                       下载深ETF份额
+                    </button>
+                    <button
+                      onClick={handleImportLatestSzseJson}
+                      style={{ ...styles.buttonGhost, flex: '1 1 0' }}
+                      title="读取 FIN_ETF_DATA_DIR 下最新的 sz_etf_*.json 并幂等 upsert 到 Mongo，不归档"
+                    >
+                      导入本地JSON
                     </button>
                   </div>
                 </div>
