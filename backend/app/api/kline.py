@@ -44,15 +44,26 @@ def _normalize_codes(code: list[str] | None) -> list[str]:
 
 
 @router.get("/etf/kline")
-async def get_etf_kline(code: list[str] | None = Query(default=None)):
+async def get_etf_kline(
+    code: list[str] | None = Query(default=None),
+    source: str = Query(
+        default="online",
+        description="K线数据源. 'online' (默认, 网络抓) | 'offline' (本地通达信)",
+    ),
+):
     etf_service, _, _, _ = _services()
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
     codes = _normalize_codes(code)
     name_map = {}
     for c in codes:
         etf_list = await etf_service.repo.find_all_by_sec_code(int(c)) if c.isdigit() else []
         if etf_list:
             name_map[c] = etf_list[0].secName
-    await etf_service.spider_kline(codes, name_map=name_map)
+    await etf_service.spider_kline(codes, name_map=name_map, data_source=source)
     return ResultVO.ok().model_dump()
 
 
@@ -62,9 +73,20 @@ async def get_kline_by_code(
     days: int | None = Query(default=None),
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
+    source: str = Query(
+        default="online",
+        description="数据源. 'online' (默认, Mongo 落库) | 'offline' (本地通达信 vipdoc+gbbq)",
+    ),
 ):
     _, kline_service, _, _ = _services()
-    entity = await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
+    entity = await kline_service.kline_by_sec_code(
+        str(code), start=start, end=end, days=days, data_source=source,
+    )
     return ResultVO.ok(entity).model_dump()
 
 

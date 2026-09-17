@@ -9,6 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import List
 
 import httpx
+import pandas as pd
 
 from app.clients.eastmoney import get_eastmoney_client
 from app.clients.kline import FQT, PERIOD, KLineRow, build_aggregator
@@ -18,6 +19,52 @@ from app.mappers.kline_data import quarter_of_kline
 from app.models.entities import KLineDataEntity, KLineEntity
 from app.repositories.base import MongoRepository
 from app.utils import date_utils, num_utils, transform
+
+
+# ---------------------------------------------------------------------- #
+# 离线 K 线 (本地通达信) → KLineDataEntity 转换
+# ---------------------------------------------------------------------- #
+def _offline_df_to_entities(df: "pd.DataFrame") -> List[KLineDataEntity]:
+    """把 fetch_local_day 返回的 DataFrame 转成 KLineDataEntity 列表 (降序).
+
+    字段映射:
+        df.amount (元) → entity.amount (元, 字符串)
+        df.vol    (手) → entity.vol (手, 字符串)
+        amountOfAverage = amount / (vol_lots × 100) = 元/股 (与 online 公式对齐)
+
+    注: day_reader 内部 vol 已统一为手 (DB 口径).
+    """
+
+    def _f(v: float) -> str:
+        if v is None or (isinstance(v, float) and v != v):  # NaN
+            return ""
+        return f"{v:g}"
+
+    result: List[KLineDataEntity] = []
+    for ts, row in df.iterrows():
+        amt = float(row["amount"]) if pd.notna(row["amount"]) else 0.0
+        vol_lots = int(row["vol"]) if pd.notna(row["vol"]) else 0
+
+        # amountOfAverage = amt / (vol_lots × 100) = 元/股
+        # 与 online 路径 _fmt 等价: amt / entity.vol / 100
+        if vol_lots > 0:
+            amt_avg = amt / (vol_lots * 100)
+        else:
+            amt_avg = 0.0
+
+        entity = KLineDataEntity(
+            date=ts.strftime("%Y-%m-%d"),
+            open=_f(float(row["open"])),
+            close=_f(float(row["close"])),
+            higher=_f(float(row["high"])),
+            lower=_f(float(row["low"])),
+            vol=str(vol_lots) if vol_lots else "0",
+            amount=_f(amt),
+            amountOfAverage=f"{amt_avg:.3f}",
+        )
+        result.append(entity)
+    result.sort(key=lambda x: x.date or "", reverse=True)
+    return result
 
 
 class KLineService:
@@ -430,8 +477,80 @@ class KLineService:
         start: str | None = None,
         end: str | None = None,
         days: int | None = None,
+        data_source: str = "online",
     ) -> KLineEntity | None:
-        return await self.kline_by_sec_code_with_range(sec_code, start=start, end=end, days=days)
+        """按 sec_code 查 K 线.
+
+        Args:
+            data_source:
+                'online' (默认) — 走 Mongo 落库 (kline_by_sec_code_with_range)
+                'offline'         — 走本地通达信 vipdoc + gbbq (FreshQuant 链路)
+                                    显式选择, 不作为 online 的 fallback.
+        """
+        if data_source == "offline":
+            return await self.kline_by_sec_code_offline(
+                sec_code, start=start, end=end, days=days,
+            )
+        return await self.kline_by_sec_code_with_range(
+            sec_code, start=start, end=end, days=days,
+        )
+
+    async def kline_by_sec_code_offline(
+        self,
+        sec_code: str,
+        start: str | None = None,
+        end: str | None = None,
+        days: int | None = None,
+    ) -> KLineEntity | None:
+        """从本地通达信 vipdoc + gbbq 读 K 线, 转 KLineEntity 形态返回.
+
+        与 online 路径的差异:
+        - 不查 Mongo (本地文件依赖, 无网络/DB)
+        - 默认前复权 (qfq); 落库公式与 QUANTAXIS 同口径 (见 app/services/tdx_offline/)
+        - 单只股票秒级返回 (gbbq 缓存命中 < 0.1s; 首次冷启 ~30s)
+        - 不写 Mongo — 离线数据只在请求时组装, 不污染落库
+
+        qfq 失败兜底: 股票 gbbq 无事件时 qfq ≡ bfq (数学等价), 静默降级 bfq 并打 warn.
+        其他硬错 (gbbq 解析未集成、.day 缺文件) 仍按契约抛错, 不静默.
+        """
+        from app.services.tdx_offline import fetch_local_day
+
+        try:
+            df = await asyncio.to_thread(fetch_local_day, sec_code, "qfq")
+        except FileNotFoundError as exc:
+            print(f"[kline/offline] {exc}", flush=True)
+            return None
+        except ValueError as exc:
+            # gbbq 解析未集成 / 该股无除权事件 — 区分两类:
+            msg = str(exc)
+            if "除权除息事件表为空" in msg:
+                # qfq ≡ bfq, 静默降级
+                print(
+                    f"[kline/offline] {sec_code} qfq → bfq (gbbq 无事件, 数学等价)",
+                    flush=True,
+                )
+                df = await asyncio.to_thread(fetch_local_day, sec_code, "bfq")
+            else:
+                # gbbq 解析未集成等其他 ValueError — 硬抛
+                raise
+        except NotImplementedError:
+            raise
+
+        if df is None or df.empty:
+            return KLineEntity(code=sec_code, name=None, klines=[])
+
+        # 应用 start/end/days 过滤 (与 online 路径 _resolve_date_range 同语义)
+        start_date, end_date = self._resolve_date_range(start, end, days)
+        if start_date or end_date:
+            mask = pd.Series(True, index=df.index)
+            if start_date:
+                mask &= df.index >= pd.Timestamp(start_date)
+            if end_date:
+                mask &= df.index <= pd.Timestamp(end_date)
+            df = df[mask]
+
+        klines = _offline_df_to_entities(df)
+        return KLineEntity(code=sec_code, name=None, klines=klines)
 
     async def kline_by_sec_code_with_range(
         self,

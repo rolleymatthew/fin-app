@@ -45,23 +45,34 @@ async def get_etf(
     code: list[str] | None = Query(default=None),
     with_kline: bool = Query(default=False),
     with_quarter: bool = Query(default=False),
+    source: str = Query(
+        default="online",
+        description="K线数据源. 'online' (默认, 网络抓取) | 'offline' (本地通达信)",
+    ),
 ):
     """抓取 ETF 日度份额数据，按 code 前缀自动分发到 SSE / SZSE。
 
     - 不传 code：上交所抓全量，下交所全量
     - 传 code：按前缀（5/6=SSE，1=SZSE）分别抓取并过滤
-    - with_kline=true：同时抓取 K 线
+    - with_kline=true：同时抓取 K 线 (source 决定在线抓/本地读)
     - with_quarter=true：同时抓取 SZSE 季度数据（写入 etf_quarter）
     """
     etf_service, _, _, _ = _services()
     codes = _normalize_codes(code)
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
 
     if codes:
         data = await etf_service.spider_etf_by_codes(codes, day_count=days)
     else:
         data = await etf_service.spider_all_etf(day_count=days)
 
-    await etf_service.save_mongo_data(data, with_kline=with_kline)
+    await etf_service.save_mongo_data(
+        data, with_kline=with_kline, data_source=source,
+    )
 
     quarter_count = 0
     if with_quarter:
@@ -192,19 +203,6 @@ async def get_etf_quarter_history(code: str = Query(...)):
         return ResultVO.build(-1, "code 必须是数字").model_dump()
     history = await etf_service.get_quarter_history(int(code))
     return ResultVO.ok(history).model_dump()
-
-
-@router.get("/etf/kline")
-async def get_etf_kline(code: list[str] | None = Query(default=None)):
-    etf_service, _, _, _ = _services()
-    codes = _normalize_codes(code)
-    name_map = {}
-    for c in codes:
-        etf_list = await etf_service.repo.find_all_by_sec_code(int(c)) if c.isdigit() else []
-        if etf_list:
-            name_map[c] = etf_list[0].secName
-    await etf_service.spider_kline(codes, name_map=name_map)
-    return ResultVO.ok().model_dump()
 
 
 @router.get("/check")
@@ -341,18 +339,6 @@ async def get_etf_by_code(code: int = Query(...)):
     etf_service, _, _, _ = _services()
     payload = await etf_service.get_etf_with_quarterly(code)
     return ResultVO.ok(payload).model_dump()
-
-
-@router.get("/kline/get")
-async def get_kline_by_code(
-    code: int = Query(...),
-    days: int | None = Query(default=None),
-    start: str | None = Query(default=None),
-    end: str | None = Query(default=None),
-):
-    _, kline_service, _, _ = _services()
-    entity = await kline_service.kline_by_sec_code(str(code), start=start, end=end, days=days)
-    return ResultVO.ok(entity).model_dump()
 
 
 @router.post("/kline/refresh")

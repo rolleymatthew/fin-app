@@ -170,7 +170,10 @@ class EtfService:
         target_set = {c for c in target_codes}
         return [e for e in all_data if e.secCode in target_set]
 
-    async def save_mongo_data(self, etf_list: List[EtfEntity], with_kline: bool = False) -> None:
+    async def save_mongo_data(
+        self, etf_list: List[EtfEntity], with_kline: bool = False,
+        data_source: str = "online",
+    ) -> None:
         for e in etf_list:
             e.pinyin = self._etf_pinyin_first_letters(e.secName)
             await self.repo.save(e)
@@ -185,6 +188,18 @@ class EtfService:
 
         async def _fetch_one(code):
             async with sem:
+                if data_source == "offline":
+                    # 离线: 本地 TDX → 转 KLineEntity → 落 Mongo
+                    entity = await self.kline_service.kline_by_sec_code_offline(
+                        str(code),
+                    )
+                    if entity and entity.klines:
+                        if name_map.get(code):
+                            entity.name = name_map[code]
+                        kline_map[code] = entity
+                        await self.kline_repo.save(entity)
+                    return
+                # 在线: 网络抓
                 market_code = spider.market_code(code)
                 kline = await self.kline_service.spider_kline_data(
                     str(code), market_code, name=name_map.get(code),
@@ -203,10 +218,24 @@ class EtfService:
             e.pinyin = self._etf_pinyin_first_letters(e.secName)
             await self.repo.save(e)
 
-    async def spider_kline(self, etf_codes: List[str], name_map: dict | None = None):
+    async def spider_kline(
+        self,
+        etf_codes: List[str],
+        name_map: dict | None = None,
+        data_source: str = "online",
+    ):
         name_map = name_map or {}
 
         async def _fetch_one(code):
+            if data_source == "offline":
+                entity = await self.kline_service.kline_by_sec_code_offline(
+                    str(code),
+                )
+                if entity and entity.klines:
+                    if name_map.get(code):
+                        entity.name = name_map[code]
+                    await self.kline_repo.save(entity)
+                return
             market_code = spider.market_code(code)
             kline = await self.kline_service.spider_kline_data(
                 code, market_code, name=name_map.get(code),

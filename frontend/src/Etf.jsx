@@ -18,6 +18,42 @@ const Page = () => {
   const [manualEtfCode, setManualEtfCode] = useState('');
   const [shouldCrawl, setShouldCrawl] = useState('是'); // 是否爬取东财，默认选择"是"
   const [etfDownloadScope, setEtfDownloadScope] = useState('list');
+  // ETF 卡片专属 K 线数据源: 'online' | 'offline' (本地通达信 vipdoc+gbbq)
+  // 持久化到 localStorage, 默认 online
+  const [etfKlineSource, setEtfKlineSource] = useState(() => {
+    try {
+      return localStorage.getItem('etfKlineSource') || 'online';
+    } catch {
+      return 'online';
+    }
+  });
+  const handleEtfKlineSourceChange = (e) => {
+    const next = e.target.value;
+    setEtfKlineSource(next);
+    try {
+      localStorage.setItem('etfKlineSource', next);
+    } catch (err) {
+      console.warn('etfKlineSource 持久化失败', err);
+    }
+  };
+  // 股票卡片专属 K 线数据源
+  const [klineSource, setKlineSource] = useState(() => {
+    try {
+      return localStorage.getItem('klineSource') || 'online';
+    } catch {
+      return 'online';
+    }
+  });
+  const handleKlineSourceChange = (e) => {
+    const next = e.target.value;
+    setKlineSource(next);
+    try {
+      localStorage.setItem('klineSource', next);
+    } catch (err) {
+      // localStorage 不可用 (隐私模式等), 不阻断 UI
+      console.warn('klineSource 持久化失败', err);
+    }
+  };
   const [etfDataVersion, setEtfDataVersion] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isEtfCardOpen, setIsEtfCardOpen] = useState(true);
@@ -45,7 +81,7 @@ const Page = () => {
   useEffect(() => {
     asyncFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion]); // 添加 shouldCrawl 作为依赖
+  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion, klineSource]); // 添加 klineSource 作为依赖
 
   useEffect(() => {
     if (!selectedBankCode) {
@@ -76,7 +112,7 @@ const Page = () => {
 
       const [etfResponse, kineResponse] = await Promise.all([
         apiGet('/api/etf/get?code=' + codeToFetch),
-        apiGet('/api/kline/get?code=' + codeToFetch),
+        apiGet(`/api/kline/get?code=${codeToFetch}&source=${klineSource}`),
       ]);
 
       // 每次图表更新，把当前 ETF 的代码同步到输入框
@@ -193,7 +229,7 @@ const Page = () => {
 
   const fetchEtfListByDays = async (daysValue) => {
     const uniqueEtfCodes = Array.from(new Set(ETF_CODES.map((item) => item.code)));
-    const url = `/api/etf?days=${daysValue}&code=${uniqueEtfCodes.join(',')}&with_kline=true&with_quarter=true`;
+    const url = `/api/etf?days=${daysValue}&code=${uniqueEtfCodes.join(',')}&with_kline=true&with_quarter=true&source=${etfKlineSource}`;
 
     try {
       const data = await apiGet(url);
@@ -223,7 +259,7 @@ const Page = () => {
 
     const uniqueEtfCodes = Array.from(new Set(ETF_CODES.map((item) => item.code)));
     const codeParam = etfDownloadScope === 'list' ? `&code=${uniqueEtfCodes.join(',')}` : '';
-    const url = `/api/etf?days=${daysValue}${codeParam}&with_kline=true&with_quarter=true`;
+    const url = `/api/etf?days=${daysValue}${codeParam}&with_kline=true&with_quarter=true&source=${etfKlineSource}`;
 
     try {
       const data = await apiGet(url);
@@ -377,7 +413,11 @@ const Page = () => {
       alert('请输入有效的ETF代码！');
       return;
     }
-    if (!window.confirm(`强制全量重抓以下 K线数据？将删除旧数据后从 Eastmoney 全量拉取。\n${codes.join(', ')}`)) {
+    const sourceLabel = etfKlineSource === 'offline' ? '本地 TDX (vipdoc+gbbq)' : '东财网络';
+    const confirmMsg = etfKlineSource === 'offline'
+      ? `按本地通达信下载以下 ETF 的 K 线 (覆盖 Mongo 中旧数据):\n${codes.join(', ')}`
+      : `强制全量重抓以下 K线数据？将删除旧数据后从 Eastmoney 全量拉取。\n${codes.join(', ')}`;
+    if (!window.confirm(`[${sourceLabel}] ${confirmMsg}`)) {
       return;
     }
 
@@ -385,7 +425,13 @@ const Page = () => {
     let failCount = 0;
     for (const code of codes) {
       try {
-        await apiPost(`/api/kline/refresh?code=${code}`);
+        if (etfKlineSource === 'offline') {
+          // 离线: 本地 TDX → 落 Mongo (不删旧数据, 由后端 save 覆盖)
+          await apiGet(`/api/etf/kline?code=${code}&source=offline`);
+        } else {
+          // 在线: 强制全量重抓
+          await apiPost(`/api/kline/refresh?code=${code}`);
+        }
         successCount += 1;
       } catch (error) {
         if (error instanceof ApiError) {
@@ -400,7 +446,7 @@ const Page = () => {
     if (successCount > 0) {
       setEtfDataVersion((v) => v + 1);
     }
-    alert(`K线刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+    alert(`K线下载完成：成功 ${successCount} 个，失败 ${failCount} 个`);
   };
 
   const handleResumeStockData = async () => {
@@ -971,15 +1017,38 @@ const Page = () => {
             <div style={{ ...styles.card, ...styles.cardGoldCorner }}>
               <div style={styles.cardHeaderRow}>
                 <p style={styles.cardTitle}>ETF 数据</p>
-                <button
-                  type="button"
-                  onClick={() => setIsEtfCardOpen((prev) => !prev)}
-                  style={styles.cardToggle}
-                  aria-label={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
-                  title={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
-                >
-                  {isEtfCardOpen ? '▾' : '▸'}
-                </button>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: '#0f172a' }}>K线源</span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <input
+                      type="radio"
+                      name="etf-kline-source"
+                      value="online"
+                      checked={etfKlineSource === 'online'}
+                      onChange={handleEtfKlineSourceChange}
+                    />
+                    在线
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: etfKlineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: etfKlineSource === 'offline' ? 600 : 400 }}>
+                    <input
+                      type="radio"
+                      name="etf-kline-source"
+                      value="offline"
+                      checked={etfKlineSource === 'offline'}
+                      onChange={handleEtfKlineSourceChange}
+                    />
+                    本地
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsEtfCardOpen((prev) => !prev)}
+                    style={styles.cardToggle}
+                    aria-label={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
+                    title={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
+                  >
+                    {isEtfCardOpen ? '▾' : '▸'}
+                  </button>
+                </div>
               </div>
               <div
                 style={{
@@ -1190,6 +1259,28 @@ const Page = () => {
                         onChange={handleCrawlChange}
                       />
                       不抓
+                    </label>
+                    <span style={{ width: 1, height: 18, background: 'rgba(148,163,184,0.4)', margin: '0 6px' }} />
+                    <span style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap' }}>K线</span>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <input
+                        type="radio"
+                        name="kline-source"
+                        value="online"
+                        checked={klineSource === 'online'}
+                        onChange={handleKlineSourceChange}
+                      />
+                      在线
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: klineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: klineSource === 'offline' ? 600 : 400 }}>
+                      <input
+                        type="radio"
+                        name="kline-source"
+                        value="offline"
+                        checked={klineSource === 'offline'}
+                        onChange={handleKlineSourceChange}
+                      />
+                      离线
                     </label>
                   </div>
                   {/* 行4：单股代码 input（独立一行） */}
