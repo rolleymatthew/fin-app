@@ -81,7 +81,7 @@ const Page = () => {
   useEffect(() => {
     asyncFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion, klineSource]); // 添加 klineSource 作为依赖
+  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion, etfKlineSource]); // 切源时重拉: 图表跟随 ETF 卡片 K 线源开关
 
   useEffect(() => {
     if (!selectedBankCode) {
@@ -112,7 +112,7 @@ const Page = () => {
 
       const [etfResponse, kineResponse] = await Promise.all([
         apiGet('/api/etf/get?code=' + codeToFetch),
-        apiGet(`/api/kline/get?code=${codeToFetch}&source=${klineSource}`),
+        apiGet(`/api/kline/get?code=${codeToFetch}&source=${etfKlineSource}`),
       ]);
 
       // 每次图表更新，把当前 ETF 的代码同步到输入框
