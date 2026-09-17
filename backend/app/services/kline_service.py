@@ -225,16 +225,24 @@ class KLineService:
         code: str,
         market: int | None,
         name: str | None = None,
+        data_source: str = "online",
     ) -> KLineEntity | None:
         """强制全量重抓：删除 k_line 中该 code 的旧数据后从 Eastmoney 全量拉取并落库。
 
         用于修复历史区间内的坏数据（如 open/vol/amount 全为 0 的条目），
         普通 spider_kline_data 在已有数据时只做增量（last_date 之后），
         不会覆盖已存在的历史条目。
+
+        Args:
+            data_source:
+                'online' (默认) — 删除旧 doc 后从 Eastmoney 全量拉取并落库
+                'offline'         — 删除旧 doc 后从本地通达信 vipdoc+gbbq
+                                    读并落库 (无网络/无 DB 依赖)
         """
         if not code:
             return None
-        if market is None:
+        if market is None and data_source != "offline":
+            # online 需要 market 拼 secid; offline 通过 code 前缀自推
             return None
         # 1) 记录旧 name (删除后 spider_kline_data 无 existing, 避免 name 丢失)
         existing = await self.repo.find_by_id(code)
@@ -245,16 +253,37 @@ class KLineService:
             await self.repo.delete_by_id(code)
         except Exception as exc:
             print(f"[kline/refresh] delete existing failed code={code}: {exc}", flush=True)
-        # 3) 调 spider_kline_data，无 existing → 走全量分支（_full_aggregator Eastmoney）
-        entity = await self.spider_kline_data(code, market, name)
-        if entity is None or not entity.klines:
-            print(f"[kline/refresh] full fetch returned empty code={code}", flush=True)
-            return None
-        # 3) 落库
-        await self.save_mongodb(entity)
         print(
-            f"[kline/refresh] done code={code} count={len(entity.klines)} "
-            f"first={entity.klines[0].date} last={entity.klines[-1].date}",
+            f"[kline/refresh] start code={code} source={data_source} "
+            f"path={'local TDX vipdoc+gbbq' if data_source == 'offline' else 'Eastmoney 全量'}",
+            flush=True,
+        )
+
+        # 3) 按 data_source 选数据源
+        if data_source == "offline":
+            entity = await self.kline_by_sec_code_offline(code)
+            if entity is None:
+                print(
+                    f"[kline/refresh/offline] local TDX 读不到 code={code} "
+                    f"(检查 TDX_HOME / .day 文件)",
+                    flush=True,
+                )
+                return None
+            entity.name = name
+        else:
+            entity = await self.spider_kline_data(code, market, name)
+            if entity is None or not entity.klines:
+                print(f"[kline/refresh] full fetch returned empty code={code}", flush=True)
+                return None
+
+        # 4) 落库
+        await self.save_mongodb(entity)
+        first = entity.klines[0].date if entity.klines else "?"
+        last = entity.klines[-1].date if entity.klines else "?"
+        print(
+            f"[kline/refresh] done code={code} source={data_source} "
+            f"count={len(entity.klines) if entity.klines else 0} "
+            f"first={first} last={last}",
             flush=True,
         )
         return entity
@@ -487,6 +516,11 @@ class KLineService:
                 'offline'         — 走本地通达信 vipdoc + gbbq (FreshQuant 链路)
                                     显式选择, 不作为 online 的 fallback.
         """
+        print(
+            f"[kline/read] kline_by_sec_code code={sec_code} source={data_source} "
+            f"start={start} end={end} days={days}",
+            flush=True,
+        )
         if data_source == "offline":
             return await self.kline_by_sec_code_offline(
                 sec_code, start=start, end=end, days=days,
@@ -670,6 +704,7 @@ class KLineService:
         start_date: date,
         end_date: date,
         name: str | None = None,
+        data_source: str = "online",
     ) -> KLineEntity | None:
         """定向补抓指定区间 K 线, 合并入 DB.
 
@@ -678,16 +713,33 @@ class KLineService:
 
         Args:
             code: 股票代码 (如 "300122")
-            market: 市场代码 (0=深, 1=沪, 2=北, 116=港)
+            market: 市场代码 (0=深, 1=沪, 2=北, 116=港) — offline 时仅作兼容占位,
+                    实际由 code 前缀自推
             start_date: 补抓起点 (含)
             end_date: 补抓终点 (含)
             name: 股票名称 (缺省从 DB 现有记录取)
+            data_source:
+                'online' (默认) — 主链聚合器 (THS→EM/sina/tencent)
+                'offline'         — 本地通达信 vipdoc (按日期切片, 不需要 market)
 
         Returns:
             更新后的 KLineEntity (含合并后的 klines), 或 None (拉取失败/切片为空)
         """
-        if market is None or end_date < start_date:
+        if end_date < start_date:
             return None
+        if data_source != "offline" and market is None:
+            return None
+
+        print(
+            f"[kline/backfill] start code={code} window=[{start_date},{end_date}] "
+            f"source={data_source} "
+            f"path={'local TDX' if data_source == 'offline' else 'aggregator'}",
+            flush=True,
+        )
+        if data_source == "offline":
+            return await self._backfill_kline_window_offline(
+                code, start_date, end_date, name,
+            )
 
         # 1) 用主链聚合器拉"近期"足够多
         days_back = (date.today() - start_date).days + 30
@@ -727,3 +779,46 @@ class KLineService:
             flush=True,
         )
         return entity
+
+    async def _backfill_kline_window_offline(
+        self,
+        code: str,
+        start_date: date,
+        end_date: date,
+        name: str | None = None,
+    ) -> KLineEntity | None:
+        """离线定向补抓: 本地通达信 vipdoc 按日期切片, 合并入 Mongo.
+
+        与 online 路径差异:
+            - 不需要 market (code 前缀自推)
+            - 不发网络请求, 单只 < 0.1s
+            - 若本地 .day 文件缺失 → 返 None (不抛错, 由调用方兜底)
+        """
+        entity = await self.kline_by_sec_code_offline(
+            code,
+            start=start_date.isoformat(),
+            end=end_date.isoformat(),
+        )
+        if entity is None or not entity.klines:
+            print(
+                f"[kline/backfill-offline] code={code} window=[{start_date},{end_date}] "
+                f"local TDX 无数据",
+                flush=True,
+            )
+            return None
+
+        existing = await self.repo.find_by_id(code)
+        if name is None and existing and existing.name:
+            name = existing.name
+        existing_klines = existing.klines if existing else []
+        merged = self._merge_klines(existing_klines, entity.klines)
+
+        new_entity = KLineEntity(code=code, name=name, klines=merged)
+        await self.save_mongodb(new_entity)
+
+        print(
+            f"[kline/backfill-offline] code={code} window=[{start_date},{end_date}] "
+            f"new={len(entity.klines)} merged_total={len(merged)}",
+            flush=True,
+        )
+        return new_entity

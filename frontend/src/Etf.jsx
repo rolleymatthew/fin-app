@@ -329,7 +329,7 @@ const Page = () => {
   };
 
   const handleFetchStockData = async () => {
-    let url = `/api/one?crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    let url = `/api/one?crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
 
     if (!stockCodesInput.trim()) {
       const shouldProceed = confirm('将要获取所有上市公司数据，确定要继续吗？');
@@ -365,7 +365,7 @@ const Page = () => {
       alert('请输入有效的股票代码！');
       return;
     }
-    const url = `/api/one?code=${codes.join(',')}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    const url = `/api/one?code=${codes.join(',')}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
     try {
       await apiGet(url);
       console.log('Batch Stock Data fetched:', url);
@@ -463,7 +463,7 @@ const Page = () => {
 
     // We'll use the first code as the keepon_code
     const keeponCode = codes[0];
-    const url = `/api/one?keepon_code=${keeponCode}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    const url = `/api/one?keepon_code=${keeponCode}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
 
     try {
       await apiGet(url);

@@ -58,6 +58,10 @@ async def get_etf_kline(
             message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
         ).model_dump()
     codes = _normalize_codes(code)
+    print(
+        f"[kline/api] GET /api/etf/kline codes={codes} source={source}",
+        flush=True,
+    )
     name_map = {}
     for c in codes:
         etf_list = await etf_service.repo.find_all_by_sec_code(int(c)) if c.isdigit() else []
@@ -84,6 +88,11 @@ async def get_kline_by_code(
             code=400,
             message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
         ).model_dump()
+    print(
+        f"[kline/api] GET /api/kline/get code={code} source={source} "
+        f"start={start} end={end} days={days}",
+        flush=True,
+    )
     entity = await kline_service.kline_by_sec_code(
         str(code), start=start, end=end, days=days, data_source=source,
     )
@@ -91,16 +100,39 @@ async def get_kline_by_code(
 
 
 @router.post("/kline/refresh")
-async def refresh_kline(code: int = Query(...)):
-    """强制全量重抓 K 线：删除旧 doc 后从 Eastmoney 全量拉取并落库。
+async def refresh_kline(
+    code: int = Query(...),
+    source: str = Query(
+        default="online",
+        description="数据源. 'online' (默认, 清空后从 Eastmoney 全量重抓) | "
+                    "'offline' (清空后从本地通达信 vipdoc+gbbq 重写)",
+    ),
+):
+    """强制全量重抓 K 线：删除旧 doc 后从指定数据源全量拉取并落库。
 
     用于修复历史区间内的坏数据（如某日 open/vol/amount 全为 0）。
     普通 /api/etf/kline 走 spider_kline_data，已有数据时只做增量（last_date
     之后），不会覆盖历史坏条目；本端点专门用来清空后重新全量抓。
+
+    source:
+        'online'  — 删除旧 doc 后从 Eastmoney 全量拉取
+        'offline' — 删除旧 doc 后从本地通达信 vipdoc+gbbq 重写
+                    (无网络/无 DB 依赖, 适合离线环境)
     """
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
     _, kline_service, _, _ = _services()
-    market = spider.market_code(code)
-    entity = await kline_service.refresh_kline_data(str(code), market, name=None)
+    market = spider.market_code(code) if source != "offline" else None
+    print(
+        f"[kline/api] POST /api/kline/refresh code={code} source={source}",
+        flush=True,
+    )
+    entity = await kline_service.refresh_kline_data(
+        str(code), market, name=None, data_source=source,
+    )
     if entity is None:
         return ResultVO.fail(code=1, message="全量重抓失败或返回为空，请检查 code / 网络")
     return ResultVO.ok(

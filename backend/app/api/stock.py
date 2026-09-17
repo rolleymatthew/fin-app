@@ -64,6 +64,12 @@ async def get_etf(
             code=400,
             message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
         ).model_dump()
+    if with_kline:
+        print(
+            f"[kline/api] GET /api/etf days={days} codes={codes or 'ALL'} "
+            f"with_kline=True with_quarter={with_quarter} source={source}",
+            flush=True,
+        )
 
     if codes:
         data = await etf_service.spider_etf_by_codes(codes, day_count=days)
@@ -224,12 +230,22 @@ async def get_one_by_one(
     keepon_code: str | None = Query(default=None),
     crawl: bool | None = Query(default=None),
     parallel: int | None = Query(default=10),
+    source: str = Query(
+        default="online",
+        description="K 线数据源 (仅 crawl=true 时生效). "
+                    "'online' (默认, 网络抓) | 'offline' (本地通达信 vipdoc+gbbq)",
+    ),
 ):
     _, kline_service, seccode_service, finance_service = _services()
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
 
     sec_codes = _normalize_codes(code)
     if sec_codes:
-        logger.info("[api] /one codes=%s", sec_codes)
+        logger.info("[api] /one codes=%s source=%s", sec_codes, source)
     if not sec_codes:
         if crawl:
             sec_codes = [x.get("secCode") for x in await seccode_service.spider_all_sec_code()]
@@ -273,14 +289,20 @@ async def get_one_by_one(
                 return
 
             if crawl:
-                # K 线: 完全不存在时用东财接口先抓一遍全量
-                # (refresh_kline_data 在无 existing 时走 spider_kline_data 全量分支)
+                # K 线: 完全不存在时按 source 选数据源抓一遍全量
+                #   online  → refresh_kline_data → EM 全量
+                #   offline → refresh_kline_data → 本地通达信 vipdoc+gbbq
                 existing_kline = await kline_service.kline_by_sec_code(entity.securityCode)
                 if not existing_kline or not existing_kline.klines:
+                    market = (
+                        kline_service.market_code(entity.secucode)
+                        if source != "offline" else None
+                    )
                     await kline_service.refresh_kline_data(
                         entity.securityCode,
-                        kline_service.market_code(entity.secucode),
+                        market,
                         name=getattr(entity, "securityNameAbbr", "") or None,
+                        data_source=source,
                     )
                 # 后续 K 线窗口缺口检测交给 export_fin_to_excel → _ensure_kline_complete
                 # (Tasks 1-4 智能判断：4 季度窗口 < 5 条触发补抓；>120 走 EM 全量, ≤120 走定向)
@@ -342,16 +364,38 @@ async def get_etf_by_code(code: int = Query(...)):
 
 
 @router.post("/kline/refresh")
-async def refresh_kline(code: int = Query(...)):
-    """强制全量重抓 K 线：删除旧 doc 后从 Eastmoney 全量拉取并落库。
+async def refresh_kline(
+    code: int = Query(...),
+    source: str = Query(
+        default="online",
+        description="数据源. 'online' (默认, 清空后从 Eastmoney 全量重抓) | "
+                    "'offline' (清空后从本地通达信 vipdoc+gbbq 重写)",
+    ),
+):
+    """强制全量重抓 K 线：删除旧 doc 后从指定数据源全量拉取并落库。
 
     用于修复历史区间内的坏数据（如某日 open/vol/amount 全为 0）。
     普通 /api/etf/kline 走 spider_kline_data，已有数据时只做增量（last_date
     之后），不会覆盖历史坏条目；本端点专门用来清空后重新全量抓。
+
+    source:
+        'online'  — 删除旧 doc 后从 Eastmoney 全量拉取
+        'offline' — 删除旧 doc 后从本地通达信 vipdoc+gbbq 重写
     """
+    if source not in ("online", "offline"):
+        return ResultVO.fail(
+            code=400,
+            message=f"非法 source={source!r}, 期望 'online' 或 'offline'",
+        ).model_dump()
     _, kline_service, _, _ = _services()
-    market = spider.market_code(code)
-    entity = await kline_service.refresh_kline_data(str(code), market, name=None)
+    market = spider.market_code(code) if source != "offline" else None
+    print(
+        f"[kline/api] POST /api/kline/refresh code={code} source={source}",
+        flush=True,
+    )
+    entity = await kline_service.refresh_kline_data(
+        str(code), market, name=None, data_source=source,
+    )
     if entity is None:
         return ResultVO.build(1, "全量重抓失败或返回为空，请检查 code / 网络", None)
     return ResultVO.ok(

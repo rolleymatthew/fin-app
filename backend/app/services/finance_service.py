@@ -645,12 +645,17 @@ class FinanceService:
 
     async def _ensure_kline_complete(
         self, kline_entity: KLineEntity, sec_code_entity: SecCodeEntity,
+        data_source: str = "online",
     ) -> KLineEntity | None:
         """检测 K 线窗口断层, 按缺口大小选路径补抓 1 次.
 
         单次 _get_yb_roe_entity 调用最多触发 1 次补抓 (取最大缺口 1 个).
         缺口 > 120 日 → EM 全量重抓 (复用 refresh_kline_data);
         缺口 ≤ 120 日 → 定向窗口补抓 (新 backfill_kline_window).
+
+        Args:
+            data_source: 透传给 refresh_kline_data / backfill_kline_window.
+                'online' (默认) — 网络; 'offline' — 本地通达信.
 
         Returns:
             原 entity (窗口全齐) 或补抓后的 entity (成功) 或 None (补抓失败).
@@ -678,13 +683,22 @@ class FinanceService:
         market = self.kline_service.market_code(sec_code_entity.secucode)
         name = getattr(sec_code_entity, "securityNameAbbr", "") or None
 
+        print(
+            f"[kline/backfill] _ensure_kline_complete code={sec_code_entity.securityCode} "
+            f"biggest_gap={biggest.span_days}d source={data_source} "
+            f"path={'EM 全量' if biggest.span_days > 120 else '定向 backfill'}",
+            flush=True,
+        )
+
         if biggest.span_days > 120:
             return await self.kline_service.refresh_kline_data(
                 sec_code_entity.securityCode, market, name=name,
+                data_source=data_source,
             )
         return await self.kline_service.backfill_kline_window(
             sec_code_entity.securityCode, market,
             start_date=biggest.start, end_date=biggest.end, name=name,
+            data_source=data_source,
         )
 
     async def _get_yb_roe_entity(self, force: int, sec_code_entity: SecCodeEntity):

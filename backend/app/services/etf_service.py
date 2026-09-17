@@ -185,6 +185,11 @@ class EtfService:
         name_map = {e.secCode: e.secName for e in etf_list if e.secCode}
         kline_map = {}
         sem = asyncio.Semaphore(5)
+        print(
+            f"[kline/api] save_mongo_data codes={len(codes)} source={data_source} "
+            f"path={'local TDX vipdoc+gbbq' if data_source == 'offline' else 'Eastmoney 增量'}",
+            flush=True,
+        )
 
         async def _fetch_one(code):
             async with sem:
@@ -225,6 +230,11 @@ class EtfService:
         data_source: str = "online",
     ):
         name_map = name_map or {}
+        print(
+            f"[kline/api] spider_kline codes={etf_codes} source={data_source} "
+            f"path={'local TDX vipdoc+gbbq' if data_source == 'offline' else 'Eastmoney 增量'}",
+            flush=True,
+        )
 
         async def _fetch_one(code):
             if data_source == "offline":
