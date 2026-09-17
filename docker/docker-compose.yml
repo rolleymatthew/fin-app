@@ -40,6 +40,9 @@ services:
       FIN_COOKIE_DIR: /app/cookies
       FIN_ETF_DATA_DIR: /app/etf_data
       FIN_ETF_DATA_AUTO_IMPORT: "true"
+      # TDX 离线 K 线: 挂载宿主通达信目录, API ?source=offline 即走这里
+      # 容器内路径固定 /app/tdx (vipdoc/sh|sz/bj/lday/*.day 在此目录下)
+      FIN_TDX_HOME: /app/tdx
     volumes:
       - type: bind
         source: D:\stock
@@ -51,6 +54,9 @@ services:
       - type: bind
         source: D:\stock\etf_data
         target: /app/etf_data
+      - type: bind
+        source: C:\zd_zxzq_gm
+        target: /app/tdx
 
 volumes:
   app_logs:

@@ -35,7 +35,31 @@ docker compose -f docker/docker-compose.yml up -d --build
 - `C:\MongoData\data` → `/data/db` — MongoDB 数据
 - `D:\stock` → `/app/data` — 后端 Excel 输出目录
 - `D:\stock\cookies` → `/app/cookies` — Eastmoney Cookie 多文件目录
+- `D:\stock\etf_data` → `/app/etf_data` — SZSE ETF JSON 自动导入目录
+- `C:\zd_zxzq_gm` → `/app/tdx` — 本地通达信目录（TDX 离线 K 线，见下文）
 - `app_logs` (named volume) → `/app/logs` — 后端日志
+
+## TDX 离线 K 线（2026-09 新增）
+
+容器内 `/api/kline/get?source=offline`、`/api/etf/kline?source=offline`、`/api/kline/refresh?source=offline`、`/api/one?source=offline` 等接口可走本地通达信 vipdoc + gbbq，无需网络。
+
+- 宿主需安装通达信客户端并完成至少一次**盘后数据下载**（包含目标股票的 `.day` 文件）
+- 默认挂载宿主 `C:\zd_zxzq_gm` 到容器 `/app/tdx`，并设置 `FIN_TDX_HOME=/app/tdx`
+- 容器内的 `vipdoc/sh/lday/*.day`、`vipdoc/sz/lday/*.day` 来自此挂载
+- **显式选择**：`source=offline`，不会被当作 online 失败后的 fallback
+- 数据流：本地 `.day` 解析 → `_offline_df_to_entities` → 写入 Mongo `k_line` 集合
+
+如果宿主通达信目录不在 `C:\zd_zxzq_gm`，修改 `docker-compose.yml` 的 `FIN_TDX_HOME` 与绑定卷 `source`：
+
+```yaml
+- type: bind
+  source: D:\zd_zxzq_gm      # 宿主路径
+  target: /app/tdx
+environment:
+  FIN_TDX_HOME: /app/tdx     # 容器内路径 (与 target 一致)
+```
+
+如果不需要离线 K 线，只想跑纯 online，可注释掉该绑定卷和 `FIN_TDX_HOME`。
 
 ## 配置覆盖
 
