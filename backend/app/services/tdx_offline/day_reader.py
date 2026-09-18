@@ -74,6 +74,11 @@ class TdxDailyBarReader:
         ("sz", "INDEX"):   (0.01, 1.0),
         ("sz", "FUND"):    (0.001, 1.0),
         ("sz", "BOND"):    (0.001, 0.01),
+        ("bj", "A_STOCK"): (0.01, 0.01),   # 北交所 92xxxx 等
+        ("bj", "B_STOCK"): (0.01, 0.01),
+        ("bj", "INDEX"):   (0.01, 1.0),
+        ("bj", "FUND"):    (0.001, 1.0),
+        ("bj", "BOND"):    (0.001, 0.01),
     }
 
     @classmethod
@@ -97,6 +102,17 @@ class TdxDailyBarReader:
             if head2 == "20":
                 return "B_STOCK"
             if head2 == "39":
+                return "INDEX"
+            if head2 in ("15", "16"):
+                return "FUND"
+            if head2 in ("10", "11", "12", "13", "14"):
+                return "BOND"
+        elif market == "bj":
+            if head2 in ("92", "83", "87", "88", "43"):
+                return "A_STOCK"   # 北交所 A 股
+            if head2 == "20":
+                return "B_STOCK"
+            if head2 in ("39",):
                 return "INDEX"
             if head2 in ("15", "16"):
                 return "FUND"
