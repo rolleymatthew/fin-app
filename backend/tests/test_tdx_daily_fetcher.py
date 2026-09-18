@@ -5,8 +5,15 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import requests
 
-from app.services.tdx_daily_fetcher.exceptions import ExtractError, MetaParseError
+from app.services.tdx_daily_fetcher.exceptions import (
+    DownloadError,
+    ExtractError,
+    MetaParseError,
+)
+from app.services.tdx_daily_fetcher.downloader import download_zip, fetch_meta
+from app.services.tdx_daily_fetcher.last_fetch import LastFetch
 from app.services.tdx_daily_fetcher.meta import MetaInfo, parse_meta_info
 
 
@@ -96,3 +103,111 @@ def test_atomic_extract_creates_vipdoc_subdir(tmp_path: Path):
     count = atomic_extract_zip(zip_path, tmp_path)
     assert count == 1
     assert (tmp_path / "vipdoc" / "bj" / "lday" / "bj920982.day").exists()
+
+
+# ---- last_fetch ----
+
+def test_last_fetch_empty_when_no_file(tmp_path: Path):
+    lf = LastFetch(target_dir=tmp_path)
+    assert lf.read() is None
+    assert lf.should_skip("2026-09-17 15:59:01") is False
+
+
+def test_last_fetch_round_trip(tmp_path: Path):
+    lf = LastFetch(target_dir=tmp_path)
+    lf.write(meta=_META_INFO, file_count=12420, zip_size=524927539)
+    loaded = lf.read()
+    assert loaded is not None
+    assert loaded["file_count"] == 12420
+    assert loaded["zip_size"] == 524927539
+    assert "fetched_at" in loaded
+
+
+def test_last_fetch_should_skip_when_same_update_time(tmp_path: Path):
+    lf = LastFetch(target_dir=tmp_path)
+    lf.write(meta=_META_INFO, file_count=12420, zip_size=100)
+    assert lf.should_skip(_META_INFO.update_time) is True
+
+
+def test_last_fetch_should_skip_false_when_different(tmp_path: Path):
+    lf = LastFetch(target_dir=tmp_path)
+    lf.write(meta=_META_INFO, file_count=12420, zip_size=100)
+    assert lf.should_skip("2099-01-01 00:00:00") is False
+
+
+# ---- downloader ----
+
+_VALID_JS_DOWNLOADER = """
+var HSJDAY_SOFT_SIZE="335,544,320";
+var HSJDAY_SOFT_TIME="2026-09-17 15:59:01";
+"""
+
+_META_INFO = parse_meta_info(_VALID_JS_DOWNLOADER)
+
+
+def test_fetch_meta_ok(monkeypatch):
+    class _Resp:
+        text = _VALID_JS_DOWNLOADER
+        def raise_for_status(self): pass
+    monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
+    info = fetch_meta("https://x/y.js")
+    assert info.update_time == "2026-09-17 15:59:01"
+    assert info.file_size == 335544320
+
+
+def test_fetch_meta_raises_on_network_error(monkeypatch):
+    def _raise(*a, **k):
+        raise requests.ConnectionError("boom")
+    monkeypatch.setattr("requests.get", _raise)
+    with pytest.raises(MetaParseError):
+        fetch_meta("https://x/y.js")
+
+
+def test_download_zip_streams_to_disk(tmp_path, monkeypatch):
+    payload = b"hello zip content"
+    class _Resp:
+        def __init__(self):
+            self.headers = {"Content-Length": str(len(payload))}
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            yield payload
+    monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
+    dest = tmp_path / "out.zip"
+    n = download_zip("https://x/y.zip", dest)
+    assert n == len(payload)
+    assert dest.read_bytes() == payload
+
+
+def test_download_zip_progress_callback(tmp_path, monkeypatch):
+    chunks = [b"a" * 100, b"b" * 100, b"c" * 100]
+    class _Resp:
+        headers = {"Content-Length": "300"}
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            for c in chunks:
+                yield c
+    monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
+    calls = []
+    download_zip(
+        "https://x/y.zip", tmp_path / "o.zip",
+        progress_cb=lambda d, t: calls.append((d, t)),
+    )
+    assert calls[-1] == (300, 300)
+    assert all(t == 300 for _, t in calls)
+
+
+def test_download_zip_removes_partial_on_error(tmp_path, monkeypatch):
+    """下载中途抛错 → 半成品文件应被删除."""
+    def _half(*a, **k):
+        class _R:
+            headers = {"Content-Length": "1000"}
+            def raise_for_status(self): pass
+            def iter_content(self, chunk_size):
+                yield b"abc"
+                raise requests.ConnectionError("drop")
+        return _R()
+    monkeypatch.setattr("requests.get", _half)
+    dest = tmp_path / "o.zip"
+    with pytest.raises(DownloadError):
+        download_zip("https://x/y.zip", dest)
+    assert not dest.exists()
