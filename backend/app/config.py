@@ -55,10 +55,11 @@ class Settings(BaseSettings):
     etf_data_auto_import: bool = False    # env: FIN_ETF_DATA_AUTO_IMPORT 默认关闭
 
     # 本地通达信离线 K 线（FreshQuant 链路：vipdoc + gbbq，无需网络/数据库）
-    # 解析顺序: FIN_TDX_HOME > TDX_HOME > 默认 C:\zd_zxzq_gm
+    # 解析顺序: FIN_TDX_HOME > TDX_HOME > 默认 D:\stock\data
     # (2026-09 改造: 接入 tdx_offline 服务, 离线复权日线)
+    # Docker 场景: env 覆盖为 /app/data
     tdx_home: str = Field(
-        default=r"C:\zd_zxzq_gm",
+        default=r"D:\stock\data",
         validation_alias=AliasChoices("FIN_TDX_HOME", "TDX_HOME"),
     )
 
