@@ -8,6 +8,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.admin_tdx import router as admin_tdx_router
 from app.api.etf import router as etf_router
 from app.api.kline import router as kline_router
 from app.api.sec_code import router as sec_code_router
@@ -20,6 +21,7 @@ from app.models.result import ResultVO
 from app.services.etf_data_watcher import start_watcher, stop_watcher
 from app.services.etf_service import EtfService
 from app.services.finance_service import FinanceService
+from app.state.tdx_fetch_state import TdxFetchStateStore
 
 settings = get_settings()
 
@@ -40,6 +42,9 @@ if _debug_url not in {"1", "true", "yes", "y", "on"}:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await ensure_indexes()
+    _app.state.settings = settings
+    _app.state.tdx_state = TdxFetchStateStore()
+
     watcher_task: asyncio.Task | None = None
     if bool(getattr(settings, "etf_data_auto_import", False)):
         service = EtfService()
@@ -52,6 +57,11 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        cancelled = _app.state.tdx_state.cancel_active("服务关闭,任务中断")
+        if cancelled:
+            logging.getLogger("app.shutdown").warning(
+                "[tdx/state] cancelled %s active tasks on shutdown", cancelled,
+            )
         await stop_watcher(watcher_task)
 
 
@@ -72,6 +82,7 @@ app.include_router(stock_router, prefix="/api", tags=["stock"])
 app.include_router(sec_code_router, prefix="/api/sec", tags=["sec"])
 app.include_router(etf_router, prefix="/api/etf", tags=["etf"])
 app.include_router(kline_router, prefix="/api", tags=["kline"])
+app.include_router(admin_tdx_router, prefix="/api/admin/tdx", tags=["admin"])
 
 
 @app.get("/health")
