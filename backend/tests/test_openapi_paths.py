@@ -36,6 +36,9 @@ EXPECTED_PATHS = {
     "/api/hk/one",
     # /api/bank/pb/history（银行股 PB 时序，feat/bank-pb-chart 新增）
     "/api/bank/pb/history",
+    # /api/admin/tdx/* （feat/tdx-offline-kline 新增）
+    "/api/admin/tdx/fetch",
+    "/api/admin/tdx/status",
     # /health
     "/health",
     # /api/check （搬到 main.py 后路径前缀不变，保持与 baseline 一致）
