@@ -164,7 +164,7 @@ def test_fetch_meta_raises_on_network_error(monkeypatch):
 
 
 def test_download_zip_streams_to_disk(tmp_path, monkeypatch):
-    payload = b"hello zip content"
+    payload = _build_minimal_zip()
     class _Resp:
         def __init__(self):
             self.headers = {"Content-Length": str(len(payload))}
@@ -179,12 +179,14 @@ def test_download_zip_streams_to_disk(tmp_path, monkeypatch):
 
 
 def test_download_zip_progress_callback(tmp_path, monkeypatch):
-    chunks = [b"a" * 100, b"b" * 100, b"c" * 100]
+    full = _build_minimal_zip()
+    # split into3 chunks
+    c1, c2, c3 = full[:len(full)//3], full[len(full)//3:2*len(full)//3], full[2*len(full)//3:]
     class _Resp:
-        headers = {"Content-Length": "300"}
+        headers = {"Content-Length": str(len(full))}
         def raise_for_status(self): pass
         def iter_content(self, chunk_size):
-            for c in chunks:
+            for c in (c1, c2, c3):
                 yield c
     monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
     calls = []
@@ -192,8 +194,9 @@ def test_download_zip_progress_callback(tmp_path, monkeypatch):
         "https://x/y.zip", tmp_path / "o.zip",
         progress_cb=lambda d, t: calls.append((d, t)),
     )
-    assert calls[-1] == (300, 300)
-    assert all(t == 300 for _, t in calls)
+    total = calls[-1][0] if calls else 0
+    assert total == len(full)
+    assert all(t == len(full) for _, t in calls)
 
 
 def test_download_zip_removes_partial_on_error(tmp_path, monkeypatch):
@@ -211,24 +214,27 @@ def test_download_zip_removes_partial_on_error(tmp_path, monkeypatch):
     with pytest.raises(DownloadError):
         download_zip("https://x/y.zip", dest)
     assert not dest.exists()
+    # .dl_tmp should also be cleaned
+    assert not dest.with_suffix(dest.suffix + ".dl_tmp").exists()
 
 
 def test_download_zip_progress_callback_when_no_content_length(tmp_path, monkeypatch):
     """chunked / Transfer-Encoding: chunked 没有 Content-Length, 也应触发最终回调."""
-    chunks = [b"a" * 100, b"b" * 100]
+    full = _build_minimal_zip()
+    c1, c2 = full[:len(full)//2], full[len(full)//2:]
     class _Resp:
-        # 故意不设 Content-Length
         headers = {}
         def raise_for_status(self): pass
         def iter_content(self, chunk_size):
-            for c in chunks:
+            for c in (c1, c2):
                 yield c
     monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
     calls = []
     download_zip("https://x/y.zip", tmp_path / "o.zip",
                  progress_cb=lambda d, t: calls.append((d, t)))
-    # 最终回调应该是 (200, 200) — 让上层认为 "下载完成 200/200"
-    assert calls[-1] == (200, 200)
+    total = calls[-1][0] if calls else 0
+    assert total == len(full)
+    assert calls[-1] == (len(full), len(full))
 
 
 # ---- fetcher orchestrator ----

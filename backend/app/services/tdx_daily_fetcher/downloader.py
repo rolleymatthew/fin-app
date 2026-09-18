@@ -76,8 +76,9 @@ def download_zip(
         total_size = 0
 
     downloaded = 0
+    tmp_path = dest_path.with_suffix(dest_path.suffix + ".dl_tmp")
     try:
-        with dest_path.open("wb") as f:
+        with tmp_path.open("wb") as f:
             for chunk in resp.iter_content(chunk_size=chunk_size):
                 if not chunk:
                     continue
@@ -86,19 +87,31 @@ def download_zip(
                 if progress_cb is not None and total_size:
                     progress_cb(downloaded, total_size)
     except requests.RequestException as exc:
-        # 中途断网 — 清理半成品
         try:
-            dest_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
         except OSError:
             pass
         raise DownloadError(f"下载中断 (已下载 {downloaded} bytes): {exc}") from exc
     except OSError as exc:
         try:
-            dest_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
         except OSError:
             pass
         raise DownloadError(f"写盘失败: {exc}") from exc
 
+    # 验证下载文件有效性 (防CDN返回bot挑战页面覆盖已有zip)
+    import zipfile
+    try:
+        with zipfile.ZipFile(tmp_path) as z:
+            bad = z.testzip()
+            if bad is not None:
+                tmp_path.unlink(missing_ok=True)
+                raise DownloadError(f"下载的zip损坏: {bad}")
+    except zipfile.BadZipFile as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise DownloadError(f"下载的文件不是有效zip: {exc}") from exc
+
+    tmp_path.rename(dest_path)
     if progress_cb is not None:
         progress_cb(downloaded, total_size or downloaded)
     return downloaded
