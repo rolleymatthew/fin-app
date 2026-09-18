@@ -62,6 +62,22 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FIN_TDX_HOME", "TDX_HOME"),
     )
 
+    # TDX vipdata 全量日线包下载目标目录 (zip + 解压 vipdoc/ 都在此)
+    # Docker 场景: env 覆盖为 /app/data (与现有 D:\stock bind mount 对齐)
+    tdx_data_dir: str = Field(
+        default=r"D:\stock\data",
+        description="通达信日线包根目录: hsjday.zip + vipdoc/ 都在此",
+        validation_alias=AliasChoices("FIN_TDX_DATA_DIR", "TDX_DATA_DIR"),
+    )
+    tdx_download_url: str = Field(
+        default="https://data.tdx.com.cn/vipdoc/hsjday.zip",
+        validation_alias=AliasChoices("FIN_TDX_DOWNLOAD_URL", "TDX_DOWNLOAD_URL"),
+    )
+    tdx_meta_url: str = Field(
+        default="https://data.tdx.com.cn/vipdoc/_hsjdayinfo.js",
+        validation_alias=AliasChoices("FIN_TDX_META_URL", "TDX_META_URL"),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
