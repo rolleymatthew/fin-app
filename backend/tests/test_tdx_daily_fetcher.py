@@ -211,3 +211,21 @@ def test_download_zip_removes_partial_on_error(tmp_path, monkeypatch):
     with pytest.raises(DownloadError):
         download_zip("https://x/y.zip", dest)
     assert not dest.exists()
+
+
+def test_download_zip_progress_callback_when_no_content_length(tmp_path, monkeypatch):
+    """chunked / Transfer-Encoding: chunked 没有 Content-Length, 也应触发最终回调."""
+    chunks = [b"a" * 100, b"b" * 100]
+    class _Resp:
+        # 故意不设 Content-Length
+        headers = {}
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            for c in chunks:
+                yield c
+    monkeypatch.setattr("requests.get", lambda *a, **k: _Resp())
+    calls = []
+    download_zip("https://x/y.zip", tmp_path / "o.zip",
+                 progress_cb=lambda d, t: calls.append((d, t)))
+    # 最终回调应该是 (200, 200) — 让上层认为 "下载完成 200/200"
+    assert calls[-1] == (200, 200)

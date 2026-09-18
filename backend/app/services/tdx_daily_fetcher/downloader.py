@@ -99,6 +99,6 @@ def download_zip(
             pass
         raise DownloadError(f"写盘失败: {exc}") from exc
 
-    if progress_cb is not None and total_size:
-        progress_cb(downloaded, total_size)
+    if progress_cb is not None:
+        progress_cb(downloaded, total_size or downloaded)
     return downloaded
