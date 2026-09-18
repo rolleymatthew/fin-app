@@ -229,3 +229,131 @@ def test_download_zip_progress_callback_when_no_content_length(tmp_path, monkeyp
                  progress_cb=lambda d, t: calls.append((d, t)))
     # 最终回调应该是 (200, 200) — 让上层认为 "下载完成 200/200"
     assert calls[-1] == (200, 200)
+
+
+# ---- fetcher orchestrator ----
+
+from app.services.tdx_daily_fetcher.fetcher import (
+    ACTIVE_STATES,
+    TaskStatus,
+    TdxDailyFetcher,
+)
+
+
+_VALID_JS_FETCHER = """
+var HSJDAY_SOFT_SIZE="335,544,320";
+var HSJDAY_SOFT_TIME="2026-09-17 15:59:14";
+"""
+
+_ZIP_FILES = {
+    "sh/lday/sh600000.day": b"X" * 32,
+    "sz/lday/sz000001.day": b"Y" * 32,
+    "bj/lday/bj920982.day": b"Z" * 32,
+}
+
+
+def _build_minimal_zip() -> bytes:
+    import io
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in _ZIP_FILES.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_active_states_constant():
+    assert ACTIVE_STATES == frozenset({"pending", "checking", "downloading", "extracting"})
+
+
+def test_fetcher_skip_when_already_today(tmp_path, monkeypatch):
+    """当 .last_fetch.json 已记录今日 update_time, 应跳过下载 (zip 不应被请求)."""
+    meta = parse_meta_info(_VALID_JS_FETCHER)
+    last = LastFetch(target_dir=tmp_path)
+    last.write(meta=meta, file_count=3, zip_size=100)
+
+    # Mock fetcher 命名空间: fetch_meta 返回同 update_time; download_zip 一旦被调用就 fail
+    monkeypatch.setattr(
+        "app.services.tdx_daily_fetcher.fetcher.fetch_meta",
+        lambda url, **kw: meta,
+    )
+    def _fail_if_called(*a, **k):
+        raise AssertionError("download_zip 不应在 SKIPPED 时调用")
+    monkeypatch.setattr(
+        "app.services.tdx_daily_fetcher.fetcher.download_zip",
+        _fail_if_called,
+    )
+
+    fetcher = TdxDailyFetcher(data_dir=tmp_path, download_url="x", meta_url="x")
+    status = fetcher.run_sync()
+    assert status.state == "skipped"
+    assert status.update_time == meta.update_time
+
+
+def test_fetcher_full_happy_path(tmp_path, monkeypatch):
+    payload = _build_minimal_zip()
+
+    class _MetaResp:
+        text = _VALID_JS_FETCHER
+        def raise_for_status(self): pass
+
+    class _ZipResp:
+        headers = {"Content-Length": str(len(payload))}
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            yield payload
+
+    def _mock_get(url, **k):
+        if url.endswith(".js"):
+            return _MetaResp()
+        return _ZipResp()
+
+    monkeypatch.setattr(requests, "get", _mock_get)
+
+    fetcher = TdxDailyFetcher(data_dir=tmp_path, download_url="https://x/y.zip", meta_url="https://x/y.js")
+    status = fetcher.run_sync()
+
+    assert status.state == "done"
+    assert status.file_count == 3
+    assert status.update_time == "2026-09-17 15:59:14"
+    assert (tmp_path / "hsjday.zip").exists()
+    assert (tmp_path / "vipdoc" / "sh" / "lday" / "sh600000.day").exists()
+    # .last_fetch.json 应已写入
+    lf = LastFetch(target_dir=tmp_path).read()
+    assert lf is not None
+    assert lf["update_time"] == "2026-09-17 15:59:14"
+
+
+def test_fetcher_progress_increases(tmp_path, monkeypatch):
+    payload = _build_minimal_zip()
+
+    class _MetaResp:
+        text = _VALID_JS_FETCHER
+        def raise_for_status(self): pass
+
+    class _ZipResp:
+        headers = {"Content-Length": str(len(payload))}
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            yield payload
+
+    def _mock_get(url, **k):
+        return _MetaResp() if url.endswith(".js") else _ZipResp()
+
+    monkeypatch.setattr(requests, "get", _mock_get)
+
+    fetcher = TdxDailyFetcher(data_dir=tmp_path, download_url="x", meta_url="x.js")
+    fetcher.run_sync()
+    # 终态 progress 应该是 100
+    assert fetcher.status().progress == 100
+
+
+def test_fetcher_meta_failure_marks_failed(tmp_path, monkeypatch):
+    def _raise(*a, **k):
+        raise requests.ConnectionError("no net")
+    monkeypatch.setattr(requests, "get", _raise)
+
+    fetcher = TdxDailyFetcher(data_dir=tmp_path, download_url="x", meta_url="x")
+    status = fetcher.run_sync()
+    assert status.state == "failed"
+    assert status.error is not None
+    assert "TDX" in status.error or "元信息" in status.error or "连接" in status.error
