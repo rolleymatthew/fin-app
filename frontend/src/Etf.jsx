@@ -1094,12 +1094,12 @@ const Page = () => {
                   </button>
                   {tdxFetch?.state === "done" && (
                     <span style={{ marginLeft: 8, color: "#28a745" }}>
-                      ✓ 已更新 ({(tdxFetch.file_count || 0).toLocaleString()} 文件)
+                      [完成] 已更新 ({(tdxFetch.file_count || 0).toLocaleString()} 文件)
                     </span>
                   )}
                   {tdxFetch?.state === "failed" && (
                     <span style={{ marginLeft: 8, color: "#dc3545" }}>
-                      ✗ 失败
+                      [失败]
                     </span>
                   )}
                   <button
