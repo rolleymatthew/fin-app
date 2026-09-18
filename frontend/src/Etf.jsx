@@ -36,6 +36,8 @@ const Page = () => {
       console.warn('etfKlineSource 持久化失败', err);
     }
   };
+  const [tdxFetch, setTdxFetch] = useState(null);
+  // shape: {state: 'started'|'checking'|'downloading'|'extracting'|'done'|'failed'|'skipped'|'busy', task_id, progress, message}
   // 股票卡片专属 K 线数据源
   const [klineSource, setKlineSource] = useState(() => {
     try {
@@ -447,6 +449,42 @@ const Page = () => {
       setEtfDataVersion((v) => v + 1);
     }
     alert(`K线下载完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+  };
+
+  const handleFetchTdxVipdata = async () => {
+    if (!window.confirm("拉取通达信全量日线包到本地（约 525MB，1-3 分钟）？")) return;
+    try {
+      const start = await apiGet("/api/admin/tdx/fetch");
+      if (start?.state === "busy") {
+        alert(`已有任务在跑: ${start.active_task_id} (${start.current_state})`);
+        return;
+      }
+      if (!start?.task_id) {
+        alert("启动下载失败，请查看后端日志");
+        return;
+      }
+      setTdxFetch({ state: "started", task_id: start.task_id, progress: 0 });
+      const iv = setInterval(async () => {
+        try {
+          const s = await apiGet(`/api/admin/tdx/status?task_id=${start.task_id}`);
+          setTdxFetch(s);
+          if (["done", "failed", "skipped"].includes(s?.state)) {
+            clearInterval(iv);
+            if (s?.state === "done") {
+              // 成功: 给个轻量反馈 (不强制 alert, 让 UI 上的按钮文字提示即可)
+            }
+            if (s?.state === "failed") {
+              alert(`下载失败: ${s?.error || s?.message || "未知错误"}`);
+            }
+          }
+        } catch (err) {
+          clearInterval(iv);
+          alert(`查询进度失败: ${err?.message || err}`);
+        }
+      }, 1000);
+    } catch (err) {
+      alert(`启动失败: ${err?.message || err}`);
+    }
   };
 
   const handleResumeStockData = async () => {
@@ -1039,6 +1077,31 @@ const Page = () => {
                     />
                     本地
                   </label>
+                  <button
+                    type="button"
+                    onClick={handleFetchTdxVipdata}
+                    disabled={
+                      tdxFetch &&
+                      !["done", "failed", "skipped"].includes(tdxFetch.state)
+                    }
+                    style={{ marginLeft: 8 }}
+                  >
+                    {tdxFetch?.state === "downloading" ? `下载中 ${tdxFetch.progress || 0}%` :
+                     tdxFetch?.state === "extracting"  ? `解压中 ${tdxFetch.progress || 0}%` :
+                     tdxFetch?.state === "checking"     ? "查询元信息..." :
+                     tdxFetch?.state === "started"      ? "准备..." :
+                     "拉取通达信日线包"}
+                  </button>
+                  {tdxFetch?.state === "done" && (
+                    <span style={{ marginLeft: 8, color: "#28a745" }}>
+                      ✓ 已更新 ({(tdxFetch.file_count || 0).toLocaleString()} 文件)
+                    </span>
+                  )}
+                  {tdxFetch?.state === "failed" && (
+                    <span style={{ marginLeft: 8, color: "#dc3545" }}>
+                      ✗ 失败
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsEtfCardOpen((prev) => !prev)}
