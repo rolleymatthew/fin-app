@@ -102,6 +102,17 @@ class TdxDailyFetcher:
             logger.info("%s state=skipped update_time=%s", log_prefix, meta.update_time)
             return s
 
+        # 磁盘空间预检 (zip ≈ meta.file_size, 解压后 ≈ 2× zip)
+        if meta.file_size and meta.file_size > 0:
+            import shutil
+            free = shutil.disk_usage(self.data_dir).free
+            need = int(meta.file_size * 2.5)  # zip + 解压 + 余量
+            if free < need:
+                return self._fail(
+                    s, log_prefix,
+                    f"磁盘不足: 需 {need // 1024 // 1024}MB, 剩余 {free // 1024 // 1024}MB",
+                )
+
         # DOWNLOADING
         s.mark("downloading", "下载中", progress=0)
         logger.info("%s state=downloading url=%s", log_prefix, self.download_url)

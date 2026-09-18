@@ -45,7 +45,7 @@ class TdxFetchStateStore:
         status = fetcher.status()
         self._tasks[status.task_id] = status
         # 在后台线程跑 — 同步阻塞 IO 不阻塞 asyncio 事件循环
-        asyncio.get_event_loop().create_task(self._run(fetcher))
+        asyncio.create_task(self._run(fetcher))
         return status
 
     async def _run(self, fetcher: TdxDailyFetcher) -> None:
