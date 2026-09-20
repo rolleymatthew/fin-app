@@ -454,7 +454,7 @@ const Page = () => {
   const handleFetchTdxVipdata = async () => {
     if (!window.confirm("拉取通达信全量日线包到本地（约 525MB，1-3 分钟）？")) return;
     try {
-      const start = await apiGet("/api/admin/tdx/fetch");
+      const start = await apiPost("/api/admin/tdx/fetch");
       if (start?.state === "busy") {
         alert(`已有任务在跑: ${start.active_task_id} (${start.current_state})`);
         return;
@@ -741,6 +741,12 @@ const Page = () => {
       transition: 'background 0.15s',
     },
     buttonUnifiedHover: '#324d68',
+    buttonRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
     buttonGhost: {
       background: '#f8fafc',
       border: '1px solid rgba(148, 163, 184, 0.6)',
@@ -1079,31 +1085,6 @@ const Page = () => {
                   </label>
                   <button
                     type="button"
-                    onClick={handleFetchTdxVipdata}
-                    disabled={
-                      tdxFetch &&
-                      !["done", "failed", "skipped"].includes(tdxFetch.state)
-                    }
-                    style={{ marginLeft: 8 }}
-                  >
-                    {tdxFetch?.state === "downloading" ? `下载中 ${tdxFetch.progress || 0}%` :
-                     tdxFetch?.state === "extracting"  ? `解压中 ${tdxFetch.progress || 0}%` :
-                     tdxFetch?.state === "checking"     ? "查询元信息..." :
-                     tdxFetch?.state === "started"      ? "准备..." :
-                     "拉取通达信日线包"}
-                  </button>
-                  {tdxFetch?.state === "done" && (
-                    <span style={{ marginLeft: 8, color: "#28a745" }}>
-                      [完成] 已更新 ({(tdxFetch.file_count || 0).toLocaleString()} 文件)
-                    </span>
-                  )}
-                  {tdxFetch?.state === "failed" && (
-                    <span style={{ marginLeft: 8, color: "#dc3545" }}>
-                      [失败]
-                    </span>
-                  )}
-                  <button
-                    type="button"
                     onClick={() => setIsEtfCardOpen((prev) => !prev)}
                     style={styles.cardToggle}
                     aria-label={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
@@ -1202,7 +1183,7 @@ const Page = () => {
                     </label>
                   </div>
                   {/* 行4：4 个统一按钮（flex-wrap 自然分两行） */}
-                  <div style={styles.row}>
+                  <div style={styles.buttonRow}>
                     <button
                       onClick={handleFetchCustomData}
                       style={{ ...styles.buttonUnified, flex: '1 1 0' }}
@@ -1227,6 +1208,8 @@ const Page = () => {
                     >
                       列表1周
                     </button>
+                  </div>
+                  <div style={styles.buttonRow}>
                     <button
                       onClick={handleFetchSzseSync}
                       style={{ ...styles.buttonUnified, flex: '1 1 0' }}
@@ -1242,6 +1225,35 @@ const Page = () => {
                     >
                       导入本地JSON
                     </button>
+                  </div>
+                  <div style={styles.buttonRow}>
+                    <button
+                      type="button"
+                      onClick={handleFetchTdxVipdata}
+                      disabled={
+                        tdxFetch &&
+                        !["done", "failed", "skipped"].includes(tdxFetch.state)
+                      }
+                      style={{ ...styles.buttonUnified, flex: '1 1 0' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = styles.buttonUnifiedHover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = styles.buttonUnified.background)}
+                    >
+                      {tdxFetch?.state === "downloading" ? `下载中 ${tdxFetch.progress || 0}%` :
+                       tdxFetch?.state === "extracting"  ? `解压中 ${tdxFetch.progress || 0}%` :
+                       tdxFetch?.state === "checking"     ? "查询元信息..." :
+                       tdxFetch?.state === "started"      ? "准备..." :
+                       "拉取通达信日线包"}
+                    </button>
+                    {tdxFetch?.state === "done" && (
+                      <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                        [完成] {(tdxFetch.file_count || 0).toLocaleString()} 文件
+                      </span>
+                    )}
+                    {tdxFetch?.state === "failed" && (
+                      <span style={{ fontSize: 12, color: "#dc3545", whiteSpace: 'nowrap' }}>
+                        [失败]
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

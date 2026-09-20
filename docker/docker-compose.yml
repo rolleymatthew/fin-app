@@ -42,8 +42,8 @@ services:
       FIN_ETF_DATA_AUTO_IMPORT: "true"
       # TDX 离线 K 线: vipdoc/ 在 /app/data 下 (与 D:\stock bind mount 共享)
       # 见 docs/superpowers/specs/2026-09-18-tdx-daily-fetcher-design.md
-      FIN_TDX_HOME: /app/data
-      FIN_TDX_DATA_DIR: /app/data
+      FIN_TDX_HOME: /app/data/data
+      FIN_TDX_DATA_DIR: /app/data/data
     volumes:
       - type: bind
         source: D:\stock
