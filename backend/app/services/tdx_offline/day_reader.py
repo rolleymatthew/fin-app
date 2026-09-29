@@ -173,14 +173,20 @@ class TdxDailyBarReader:
                 vol_lots = int(vol * self._vol_coeff)
             volumes.append(vol_lots)
             # amt 自洽校验: amount_raw 与 close × shares 应在 5× 内
-            # 部分 .day 文件个别记录损坏 (如 510300 的 2026-01-28, amt 偏 100×),
-            # 此时用 close × shares × 100 替代 (元×手×100=元)
+            # 个别 .day 文件偶发 raw ≈ expected × 100 (实测: 510050 的 13 个日期),
+            # 视为通达信写入时把 amount 单位多乘了 100 倍的脏数据,
+            # 启发式自动 ÷100 / ×100 修正, 不打 warn; 其它偏离仍 warn + 替代.
             shares = vol_lots * 100
             if shares > 0 and amount > 0:
                 expected_amt = close_yuan * shares
-                ratio = amount / expected_amt
+                raw_ratio = amount / expected_amt
+                amount_yuan = amount
+                if raw_ratio > 50 and raw_ratio < 200:
+                    amount_yuan = amount / 100.0
+                elif raw_ratio > 0.005 and raw_ratio < 0.02:
+                    amount_yuan = amount * 100.0
+                ratio = amount_yuan / expected_amt
                 if ratio < 0.2 or ratio > 5.0:
-                    # 异常 — 用估值替代并打 warn
                     print(
                         f"[tdx_offline] {yyyymmdd} amt 异常 (raw={amount:.0f}, "
                         f"expected≈{expected_amt:.0f}, ratio={ratio:.2f}), 用 close×shares 替代",
@@ -188,6 +194,8 @@ class TdxDailyBarReader:
                     )
                     amounts.append(close_yuan * shares)
                     continue
+                amounts.append(float(amount_yuan))
+                continue
             amounts.append(float(amount))
 
         df = pd.DataFrame(
