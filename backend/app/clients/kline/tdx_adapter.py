@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.clients.kline.types import FQT, KLineRow, PERIOD, SOURCE
+from app.clients.kline.types import FQT, PERIOD, SOURCE, KLineRow
 from app.config import get_settings
 
 if TYPE_CHECKING:
