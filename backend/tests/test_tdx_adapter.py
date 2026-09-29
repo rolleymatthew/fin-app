@@ -144,8 +144,8 @@ def _setup_minimal_tdx_home(tmp_path: Path, code: str = "510500") -> Path:
     return home
 
 
-def test_fetch_returns_klinerows_descending():
-    home = _setup_minimal_tdx_home(Path("/tmp/test_tdx_adapter_fetch"))
+def test_fetch_returns_klinerows_descending(tmp_path):
+    home = _setup_minimal_tdx_home(tmp_path / "tdx")
 
     async def _run():
         adapter = TdxAdapter(tdx_home=home)
@@ -167,8 +167,8 @@ def test_fetch_returns_klinerows_descending():
     assert r.volume == 100 * 100  # 手 → 股
 
 
-def test_fetch_raises_filenotodo_when_missing():
-    home = Path("/tmp/test_tdx_adapter_missing") / "tdx"
+def test_fetch_raises_filenotodo_when_missing(tmp_path):
+    home = tmp_path / "tdx"
     home.mkdir(parents=True, exist_ok=True)
     # 不写任何 .day / gbbq, 期望 fetch_local_day 抛 FileNotFoundError (透传)
 
@@ -180,9 +180,9 @@ def test_fetch_raises_filenotodo_when_missing():
         asyncio.run(_run())
 
 
-def test_fetch_ignores_limit():
+def test_fetch_ignores_limit(tmp_path):
     """spec: limit 参数被忽略, .day 全集返回."""
-    home = _setup_minimal_tdx_home(Path("/tmp/test_tdx_adapter_limit"))
+    home = _setup_minimal_tdx_home(tmp_path / "tdx")
 
     async def _run():
         adapter = TdxAdapter(tdx_home=home)

@@ -81,9 +81,6 @@ class KLineService:
     # 全量拉取: 覆盖上市至今所有历史数据
     DEFAULT_LIMIT = 99999
 
-    # 增量窗口阈值: 超过此天数走东财全量补齐 (避免腾讯/新浪单次数据上限)
-    INC_FULL_REFILL_DAYS = 90
-
     def __init__(self):
         self.client = get_eastmoney_client()
         self.repo = MongoRepository(KLineEntity)
@@ -94,6 +91,13 @@ class KLineService:
             network_chain_cfg=settings.kline_network_chain.split(","),
             fallback_chain_cfg=[settings.kline_primary, *settings.kline_fallbacks.split(",")],
         )
+
+    async def aclose(self) -> None:
+        """释放 self._pipeline 持有的 httpx.AsyncClient 等资源.
+
+        由 FastAPI lifespan 在 shutdown 时调用, 避免长跑进程静默泄漏连接.
+        """
+        await self._pipeline.aclose()
 
     def market_code(self, secucode: str) -> int | None:
         return spider.market(secucode)
@@ -156,11 +160,22 @@ class KLineService:
         new_entities = self._rows_to_entities(new_rows)
         merged = self._merge_klines(existing_klines, new_entities, prefer="existing")
         final_name = name or (existing.name if existing else None)
+        # tag 兼容旧日志命名 (供监控 grep):
+        #   incremental/full × {primary, chain-fallback}
+        #   - primary: gap=0, 仅 TDX 即覆盖 (无网络调用)
+        #   - chain-fallback: gap>0, 走了网络补 gap
+        if last_date is None:
+            tag = "full-chain-fallback" if result.network_attempted else "full-EM-direct"
+        else:
+            tag = (
+                "incremental-chain-fallback"
+                if result.network_attempted else "incremental-primary"
+            )
         print(
             f"[kline] hybrid-source code={code} rows={len(merged)} "
             f"sources={result.sources_used} "
             f"tdx={result.tdx_rows_count} network={result.network_rows_count} "
-            f"gap={result.gap_days}",
+            f"gap={result.gap_days} tag={tag}",
             flush=True,
         )
         return KLineEntity(code=code, name=final_name, klines=merged)
@@ -703,9 +718,10 @@ class KLineService:
             return None
 
         print(
-            f"[kline/backfill] start code={code} window=[{start_date},{end_date}] "
+            f"[kline/backfill/start] code={code} market={market} "
+            f"window=[{start_date},{end_date}] "
             f"source={data_source} "
-            f"path={'local TDX' if data_source == 'offline' else 'aggregator'}",
+            f"path={'local TDX' if data_source == 'offline' else 'hybrid'}",
             flush=True,
         )
         if data_source == "offline":

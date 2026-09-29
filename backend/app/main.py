@@ -21,6 +21,7 @@ from app.models.result import ResultVO
 from app.services.etf_data_watcher import start_watcher, stop_watcher
 from app.services.etf_service import EtfService
 from app.services.finance_service import FinanceService
+from app.services.kline_service import KLineService
 from app.state.tdx_fetch_state import TdxFetchStateStore
 
 settings = get_settings()
@@ -44,6 +45,7 @@ async def lifespan(_app: FastAPI):
     await ensure_indexes()
     _app.state.settings = settings
     _app.state.tdx_state = TdxFetchStateStore()
+    _app.state.kline_service = KLineService()
 
     watcher_task: asyncio.Task | None = None
     if bool(getattr(settings, "etf_data_auto_import", False)):
@@ -63,6 +65,7 @@ async def lifespan(_app: FastAPI):
                 "[tdx/state] cancelled %s active tasks on shutdown", cancelled,
             )
         await stop_watcher(watcher_task)
+        await _app.state.kline_service.aclose()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
