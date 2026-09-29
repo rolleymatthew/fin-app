@@ -48,6 +48,13 @@ class Settings(BaseSettings):
         default="eastmoney,sina",
         validation_alias=AliasChoices("FIN_KLINE_FALLBACKS", "KLINE_FALLBACKS"),
     )
+    # Hybrid 模式下, TDX gap 补抓的网络源链顺序. 顺序敏感, 先轻后全.
+    # 增量场景用此链覆盖最近 gap; TDX 不可用时 kline_primary + kline_fallbacks 兜底.
+    kline_network_chain: str = Field(
+        default="sina,tencent,eastmoney",
+        description="Hybrid 模式下, TDX gap 补抓的网络源链顺序. 顺序敏感, 先轻后全.",
+        validation_alias=AliasChoices("FIN_KLINE_NETWORK_CHAIN", "KLINE_NETWORK_CHAIN"),
+    )
 
     # SZSE ETF 日终 JSON 自动入库（豆包定时任务下载文件）
     etf_data_dir: str = "./data/etf_data"  # env: FIN_ETF_DATA_DIR
