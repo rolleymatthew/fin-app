@@ -17,6 +17,7 @@ from app.clients.kline.types import (
     FetchResult,
     KLineRow,
 )
+from app.services.kline_pipeline import HybridFetchResult
 
 
 def _row(date, o, c, h, lo, v, amt=None, turnover=None):
@@ -292,7 +293,7 @@ async def test_eastmoney_returns_empty_on_http_error():
 
 
 async def test_klineservice_uses_chain_for_sh_market(monkeypatch):
-    """无历史 → 全量抓取走 eastmoney→sina→tencent 链."""
+    """无历史 → 全量抓取走 hybrid pipeline (TDX-first + network)."""
     from app.services.kline_service import KLineService
 
     # 强制构造 (避开真实 Mongo); repo.find_by_id 返回 None (无历史)
@@ -301,14 +302,14 @@ async def test_klineservice_uses_chain_for_sh_market(monkeypatch):
     service.repo.find_by_id = AsyncMock(return_value=None)
     service.client = MagicMock()
 
-    # stub full aggregator: 返回行 (volume 单位: 股)
+    # stub pipeline: 返回行 (volume 单位: 股)
     stub_rows = [_row("2026-07-31", 7.6, 7.579, 7.679, 7.521, 746014340)]
-    stub_result = MagicMock(rows=stub_rows, source=SOURCE.EASTMONEY, fell_back=False, error=None)
-    stub_full_agg = MagicMock()
-    stub_full_agg.fetch = AsyncMock(return_value=stub_result)
-    service._full_aggregator = stub_full_agg
-    # 增量 aggregator 不应被调用
-    service._aggregator = MagicMock()
+    stub_result = HybridFetchResult(
+        rows=stub_rows, sources_used=["tdx"], tdx_rows_count=1,
+    )
+    stub_pipeline = MagicMock()
+    stub_pipeline.fetch_hybrid = AsyncMock(return_value=stub_result)
+    service._pipeline = stub_pipeline
 
     entity = await service.spider_kline_data("510500", 1)
     assert entity is not None
@@ -317,35 +318,32 @@ async def test_klineservice_uses_chain_for_sh_market(monkeypatch):
     assert entity.klines[0].date == "2026-07-31"
     # 746014340 股 -> 7460143 手 (与东财路径 _convert_kline 输出一致)
     assert entity.klines[0].vol == "7460143"
-    # 验证 full aggregator 被调用, 参数正确
-    args, kwargs = stub_full_agg.fetch.call_args
+    # 验证 pipeline 被调用, 参数正确
+    kwargs = stub_pipeline.fetch_hybrid.call_args.kwargs
     assert kwargs["symbol"] == "sh510500"
     assert kwargs["limit"] == 99999
-    # 增量 aggregator 未被调用
-    service._aggregator.fetch.assert_not_called()
 
 
 async def test_klineservice_falls_back_to_eastmoney_when_chain_empty(monkeypatch):
-    """全量链上所有源都空 → 返回 None"""
+    """pipeline 返回空 → 返回 None"""
     from app.services.kline_service import KLineService
 
     service = KLineService.__new__(KLineService)
     service.repo = MagicMock()
     service.repo.find_by_id = AsyncMock(return_value=None)
     service.client = MagicMock()
-    stub_agg = MagicMock()
-    stub_agg.fetch = AsyncMock(
-        return_value=MagicMock(rows=[], source=None, fell_back=True, error="all empty")
+    stub_pipeline = MagicMock()
+    stub_pipeline.fetch_hybrid = AsyncMock(
+        return_value=HybridFetchResult(rows=[], sources_used=[]),
     )
-    service._full_aggregator = stub_agg
-    service._aggregator = MagicMock()
+    service._pipeline = stub_pipeline
 
     entity = await service.spider_kline_data("510500", 1)
     assert entity is None
 
 
 async def test_klineservice_incremental_when_db_has_history():
-    """DB 有历史 → 增量拉取 (腾讯主源), 只取 last_date 之后的行, 合并返回."""
+    """DB 有历史 → 增量拉取 (hybrid), 只取 last_date 之后的行, 合并返回."""
     from app.models.entities import KLineDataEntity
     from app.services.kline_service import KLineService
 
@@ -365,16 +363,15 @@ async def test_klineservice_incremental_when_db_has_history():
     service.repo = MagicMock()
     service.repo.find_by_id = AsyncMock(return_value=existing_entity)
 
-    # 增量 aggregator 返回 07-30 + 07-31 (07-30 应被去重覆盖)
+    # 增量 pipeline 返回 07-30 + 07-31 (07-30 应被去重覆盖)
     inc_rows = [
         _row("2026-07-30", 7.4, 7.3, 7.5, 7.2, 9016071 * 100),
         _row("2026-07-31", 7.6, 7.5, 7.6, 7.4, 9936368 * 100),
     ]
-    inc_result = MagicMock(rows=inc_rows, source=SOURCE.TENCENT, fell_back=False, error=None)
-    stub_inc_agg = MagicMock()
-    stub_inc_agg.fetch = AsyncMock(return_value=inc_result)
-    service._aggregator = stub_inc_agg
-    service._full_aggregator = MagicMock()
+    inc_result = HybridFetchResult(rows=inc_rows, sources_used=["sina"])
+    stub_pipeline = MagicMock()
+    stub_pipeline.fetch_hybrid = AsyncMock(return_value=inc_result)
+    service._pipeline = stub_pipeline
 
     entity = await service.spider_kline_data("510500", 1)
     assert entity is not None
@@ -383,10 +380,8 @@ async def test_klineservice_incremental_when_db_has_history():
     assert dates == ["2026-07-31", "2026-07-30", "2026-07-29"]  # 降序
     assert len(entity.klines) == 3
     # 增量 limit 按 last_date 到今天的日历天数计算
-    args, _ = stub_inc_agg.fetch.call_args
-    assert args[3] >= 1  # 至少 1 天
-    # full aggregator 未被调用
-    service._full_aggregator.fetch.assert_not_called()
+    kwargs = stub_pipeline.fetch_hybrid.call_args.kwargs
+    assert kwargs["limit"] >= 1
 
 
 async def test_klineservice_incremental_uptodate_returns_existing():
@@ -410,20 +405,18 @@ async def test_klineservice_incremental_uptodate_returns_existing():
     inc_rows = [
         _row("2026-07-30", 7.4, 7.3, 7.5, 7.2, 9016071 * 100),
     ]
-    inc_result = MagicMock(rows=inc_rows, source=SOURCE.TENCENT, fell_back=False, error=None)
-    stub_inc_agg = MagicMock()
-    stub_inc_agg.fetch = AsyncMock(return_value=inc_result)
-    service._aggregator = stub_inc_agg
-    service._full_aggregator = MagicMock()
+    inc_result = HybridFetchResult(rows=inc_rows, sources_used=["sina"])
+    stub_pipeline = MagicMock()
+    stub_pipeline.fetch_hybrid = AsyncMock(return_value=inc_result)
+    service._pipeline = stub_pipeline
 
     entity = await service.spider_kline_data("510500", 1)
     # 返回的是原 existing_entity (无新增)
     assert entity is existing_entity
-    service._full_aggregator.fetch.assert_not_called()
 
 
 async def test_klineservice_hk_market_skips_chain(monkeypatch):
-    """market=116 (HK) 直接走东财, 不走聚合链."""
+    """market=116 (HK) 直接走东财, 不走 hybrid pipeline."""
     import json
 
     from app.services.kline_service import KLineService
@@ -442,14 +435,14 @@ async def test_klineservice_hk_market_skips_chain(monkeypatch):
 
     fake_em.kline = fake_kline
     service.client = fake_em
-    stub_agg = MagicMock()
-    stub_agg.fetch = AsyncMock()
-    service._aggregator = stub_agg
+    stub_pipeline = MagicMock()
+    stub_pipeline.fetch_hybrid = AsyncMock()
+    service._pipeline = stub_pipeline
 
     entity = await service.spider_kline_data("00700", 116)
     assert entity is not None
     assert entity.name == "腾讯控股"
-    stub_agg.fetch.assert_not_called()
+    stub_pipeline.fetch_hybrid.assert_not_called()
 
 
 def test_klineservice_rows_to_entities_computes_amountOfAverage():
