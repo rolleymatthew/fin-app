@@ -515,3 +515,12 @@ def test_klineservice_rows_to_entities_no_amount_when_volume_or_close_zero():
     assert e.amount is None
     # amountOfAverage 走 else 分支 → "0.000"
     assert e.amountOfAverage == "0.000"
+
+
+# ------------------- SOURCE.TDX -------------------
+
+
+def test_source_enum_includes_tdx():
+    from app.clients.kline.types import SOURCE
+    assert SOURCE.TDX == "tdx"
+    assert SOURCE("tdx") is SOURCE.TDX
