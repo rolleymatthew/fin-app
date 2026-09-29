@@ -27,7 +27,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.config import get_settings
 from app.services.tdx_offline.day_reader import (
     TdxDailyBarReader,
     TdxMarket,
@@ -63,16 +62,9 @@ def _infer_market(code: str) -> str:
 
 
 # ---------------------------------------------------------------------- #
-# tdx_home 解析 (三级 fallback)
-# ---------------------------------------------------------------------- #
-def _resolve_tdx_home(tdx_home: str | os.PathLike | None) -> Path:
-    """入参 > settings > 环境变量 > 默认 C:\\zd_zxzq_gm."""
-    if tdx_home:
-        return Path(tdx_home)
-    # settings 走 lru_cache, 这里调一次即可
-    settings = get_settings()
-    home = settings.tdx_home or os.environ.get("TDX_HOME") or r"C:\zd_zxzq_gm"
-    return Path(home)
+# tdx_home 解析 (三级 fallback) — shim, 实际实现在 clients/kline/tdx_adapter.py
+# 保留旧符号名 _resolve_tdx_home 让本包内其他调用方无需改动.
+from app.clients.kline.tdx_adapter import resolve_tdx_home as _resolve_tdx_home  # noqa: E402, I001
 
 
 # ---------------------------------------------------------------------- #

@@ -85,3 +85,12 @@ def test_bj_market_present():
     """北交所至少有一只股票."""
     rows = _read_day("bj", "920982")
     assert len(rows) > 100
+
+
+def test_resolve_tdx_home_importable_from_kline_package():
+    """Spec 要求 `_resolve_tdx_home` 从 tdx_offline 迁到 clients/kline/tdx_adapter.py.
+    旧入口（tdx_offline/fetcher.py）改为 import shim, 但 resolve_tdx_home 自身在
+    clients/kline 下独立可用, 不依赖 tdx_offline 内部状态."""
+    from app.clients.kline.tdx_adapter import resolve_tdx_home
+    p = resolve_tdx_home("/tmp/fake_tdx_home")
+    assert p == Path("/tmp/fake_tdx_home")
