@@ -1395,53 +1395,62 @@ const Page = () => {
                       下载常用票
                     </button>
                   </div>
-                  {/* 行3：财务三表数据源 (抓东财 / 不抓) */}
-                  <div style={styles.row}>
+                  {/* 行3+4：财务三表 / K 线数据源 (CSS Grid 两列, label 锁列1, radios 锁列2) */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '70px 1fr',
+                      rowGap: 6,
+                      columnGap: 8,
+                      alignItems: 'center',
+                    }}
+                  >
                     <span style={styles.label}>财务三表:</span>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="radio"
-                        name="crawl-select"
-                        value="是"
-                        checked={shouldCrawl === '是'}
-                        onChange={handleCrawlChange}
-                      />
-                      抓东财
-                    </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="radio"
-                        name="crawl-select"
-                        value="否"
-                        checked={shouldCrawl === '否'}
-                        onChange={handleCrawlChange}
-                      />
-                      不抓
-                    </label>
-                  </div>
-                  {/* 行4：K 线数据源 (在线 / 离线) */}
-                  <div style={styles.row}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="crawl-select"
+                          value="是"
+                          checked={shouldCrawl === '是'}
+                          onChange={handleCrawlChange}
+                        />
+                        抓东财
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="crawl-select"
+                          value="否"
+                          checked={shouldCrawl === '否'}
+                          onChange={handleCrawlChange}
+                        />
+                        不抓
+                      </label>
+                    </div>
                     <span style={styles.label}>K 线:</span>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="radio"
-                        name="kline-source"
-                        value="online"
-                        checked={klineSource === 'online'}
-                        onChange={handleKlineSourceChange}
-                      />
-                      在线 (Mongo)
-                    </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: klineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: klineSource === 'offline' ? 600 : 400 }}>
-                      <input
-                        type="radio"
-                        name="kline-source"
-                        value="offline"
-                        checked={klineSource === 'offline'}
-                        onChange={handleKlineSourceChange}
-                      />
-                      离线 (通达信)
-                    </label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="kline-source"
+                          value="online"
+                          checked={klineSource === 'online'}
+                          onChange={handleKlineSourceChange}
+                        />
+                        在线 (Mongo)
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: klineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: klineSource === 'offline' ? 600 : 400 }}>
+                        <input
+                          type="radio"
+                          name="kline-source"
+                          value="offline"
+                          checked={klineSource === 'offline'}
+                          onChange={handleKlineSourceChange}
+                        />
+                        离线 (通达信)
+                      </label>
+                    </div>
                   </div>
                   {/* 行4：单股代码 input（独立一行） */}
                   <div style={styles.row}>
