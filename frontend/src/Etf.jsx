@@ -1397,7 +1397,7 @@ const Page = () => {
                   </div>
                   {/* 行3：财务三表数据源 (抓东财 / 不抓) */}
                   <div style={styles.row}>
-                    <span style={{ ...styles.label, minWidth: 84 }}>财务三表:</span>
+                    <span style={styles.label}>财务三表:</span>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
                         type="radio"
@@ -1421,7 +1421,7 @@ const Page = () => {
                   </div>
                   {/* 行4：K 线数据源 (在线 / 离线) */}
                   <div style={styles.row}>
-                    <span style={{ ...styles.label, minWidth: 84 }}>K 线:</span>
+                    <span style={styles.label}>K 线:</span>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
                         type="radio"
