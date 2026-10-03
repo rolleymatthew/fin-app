@@ -1395,7 +1395,7 @@ const Page = () => {
                       下载常用票
                     </button>
                   </div>
-                  {/* 行3+4：财务三表 / K 线数据源 (CSS Grid 两列, label 锁列1, radios 锁列2) */}
+                  {/* 行3+4：财报 / K 线数据源 (CSS Grid 两列, label 锁列1, radios 锁列2) */}
                   <div
                     style={{
                       display: 'grid',
@@ -1405,7 +1405,7 @@ const Page = () => {
                       alignItems: 'center',
                     }}
                   >
-                    <span style={styles.label}>财务三表:</span>
+                    <span style={styles.label}>财报:</span>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         <input
