@@ -48,11 +48,43 @@ class Settings(BaseSettings):
         default="eastmoney,sina",
         validation_alias=AliasChoices("FIN_KLINE_FALLBACKS", "KLINE_FALLBACKS"),
     )
+    # Hybrid 模式下, TDX gap 补抓的网络源链顺序. 顺序敏感, 先轻后全.
+    # 增量场景用此链覆盖最近 gap; TDX 不可用时 kline_primary + kline_fallbacks 兜底.
+    kline_network_chain: str = Field(
+        default="sina,tencent,eastmoney",
+        description="Hybrid 模式下, TDX gap 补抓的网络源链顺序. 顺序敏感, 先轻后全.",
+        validation_alias=AliasChoices("FIN_KLINE_NETWORK_CHAIN", "KLINE_NETWORK_CHAIN"),
+    )
 
     # SZSE ETF 日终 JSON 自动入库（豆包定时任务下载文件）
     etf_data_dir: str = "./data/etf_data"  # env: FIN_ETF_DATA_DIR
     etf_data_poll_seconds: int = 300      # env: FIN_ETF_DATA_POLL_SECONDS 默认 5 分钟
     etf_data_auto_import: bool = False    # env: FIN_ETF_DATA_AUTO_IMPORT 默认关闭
+
+    # 本地通达信离线 K 线（FreshQuant 链路：vipdoc + gbbq，无需网络/数据库）
+    # 解析顺序: FIN_TDX_HOME > TDX_HOME > 默认 D:\stock\data
+    # (2026-09 改造: 接入 tdx_offline 服务, 离线复权日线)
+    # Docker 场景: env 覆盖为 /app/data
+    tdx_home: str = Field(
+        default=r"D:\stock\data",
+        validation_alias=AliasChoices("FIN_TDX_HOME", "TDX_HOME"),
+    )
+
+    # TDX vipdata 全量日线包下载目标目录 (zip + 解压 vipdoc/ 都在此)
+    # Docker 场景: env 覆盖为 /app/data (与现有 D:\stock bind mount 对齐)
+    tdx_data_dir: str = Field(
+        default=r"D:\stock\data",
+        description="通达信日线包根目录: hsjday.zip + vipdoc/ 都在此",
+        validation_alias=AliasChoices("FIN_TDX_DATA_DIR", "TDX_DATA_DIR"),
+    )
+    tdx_download_url: str = Field(
+        default="https://data.tdx.com.cn/vipdoc/hsjday.zip",
+        validation_alias=AliasChoices("FIN_TDX_DOWNLOAD_URL", "TDX_DOWNLOAD_URL"),
+    )
+    tdx_meta_url: str = Field(
+        default="https://data.tdx.com.cn/vipdoc/_hsjdayinfo.js",
+        validation_alias=AliasChoices("FIN_TDX_META_URL", "TDX_META_URL"),
+    )
 
 
 @lru_cache

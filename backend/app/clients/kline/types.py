@@ -27,6 +27,7 @@ class SOURCE(str, Enum):
     TENCENT = "tencent"
     SINA = "sina"
     EASTMONEY = "eastmoney"
+    TDX = "tdx"
 
 
 @dataclass

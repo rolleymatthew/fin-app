@@ -18,6 +18,49 @@ const Page = () => {
   const [manualEtfCode, setManualEtfCode] = useState('');
   const [shouldCrawl, setShouldCrawl] = useState('是'); // 是否爬取东财，默认选择"是"
   const [etfDownloadScope, setEtfDownloadScope] = useState('list');
+  // ETF 卡片专属 K 线数据源: 'online' | 'offline' (本地通达信 vipdoc+gbbq)
+  // 持久化到 localStorage, 默认 online
+  const [etfKlineSource, setEtfKlineSource] = useState(() => {
+    try {
+      return localStorage.getItem('etfKlineSource') || 'online';
+    } catch {
+      return 'online';
+    }
+  });
+  const handleEtfKlineSourceChange = (e) => {
+    const next = e.target.value;
+    setEtfKlineSource(next);
+    try {
+      localStorage.setItem('etfKlineSource', next);
+    } catch (err) {
+      console.warn('etfKlineSource 持久化失败', err);
+    }
+  };
+  const [tdxFetch, setTdxFetch] = useState(null);
+  // shape: {state: 'started'|'checking'|'downloading'|'extracting'|'done'|'failed'|'skipped'|'busy', task_id, progress, message}
+  // 股票卡片专属 K 线数据源
+
+  // TDX → Mongo 单股 K 线同步 (对应 POST /api/kline/sync-from-tdx)
+  const [tdxSync, setTdxSync] = useState(null);
+  // shape: {state: 'idle'|'syncing'|'done'|'failed', code, latest_date, record_count, message}
+  const [tdxSyncCode, setTdxSyncCode] = useState('');
+  const [klineSource, setKlineSource] = useState(() => {
+    try {
+      return localStorage.getItem('klineSource') || 'online';
+    } catch {
+      return 'online';
+    }
+  });
+  const handleKlineSourceChange = (e) => {
+    const next = e.target.value;
+    setKlineSource(next);
+    try {
+      localStorage.setItem('klineSource', next);
+    } catch (err) {
+      // localStorage 不可用 (隐私模式等), 不阻断 UI
+      console.warn('klineSource 持久化失败', err);
+    }
+  };
   const [etfDataVersion, setEtfDataVersion] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isEtfCardOpen, setIsEtfCardOpen] = useState(true);
@@ -45,7 +88,7 @@ const Page = () => {
   useEffect(() => {
     asyncFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion]); // 添加 shouldCrawl 作为依赖
+  }, [selectedEtfCode, selectedTimeRange, manualEtfCode, shouldCrawl, etfDataVersion, etfKlineSource]); // 切源时重拉: 图表跟随 ETF 卡片 K 线源开关
 
   useEffect(() => {
     if (!selectedBankCode) {
@@ -76,7 +119,7 @@ const Page = () => {
 
       const [etfResponse, kineResponse] = await Promise.all([
         apiGet('/api/etf/get?code=' + codeToFetch),
-        apiGet('/api/kline/get?code=' + codeToFetch),
+        apiGet(`/api/kline/get?code=${codeToFetch}&source=${etfKlineSource}`),
       ]);
 
       // 每次图表更新，把当前 ETF 的代码同步到输入框
@@ -193,7 +236,7 @@ const Page = () => {
 
   const fetchEtfListByDays = async (daysValue) => {
     const uniqueEtfCodes = Array.from(new Set(ETF_CODES.map((item) => item.code)));
-    const url = `/api/etf?days=${daysValue}&code=${uniqueEtfCodes.join(',')}&with_kline=true&with_quarter=true`;
+    const url = `/api/etf?days=${daysValue}&code=${uniqueEtfCodes.join(',')}&with_kline=true&with_quarter=true&source=${etfKlineSource}`;
 
     try {
       const data = await apiGet(url);
@@ -223,7 +266,7 @@ const Page = () => {
 
     const uniqueEtfCodes = Array.from(new Set(ETF_CODES.map((item) => item.code)));
     const codeParam = etfDownloadScope === 'list' ? `&code=${uniqueEtfCodes.join(',')}` : '';
-    const url = `/api/etf?days=${daysValue}${codeParam}&with_kline=true&with_quarter=true`;
+    const url = `/api/etf?days=${daysValue}${codeParam}&with_kline=true&with_quarter=true&source=${etfKlineSource}`;
 
     try {
       const data = await apiGet(url);
@@ -293,7 +336,7 @@ const Page = () => {
   };
 
   const handleFetchStockData = async () => {
-    let url = `/api/one?crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    let url = `/api/one?crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
 
     if (!stockCodesInput.trim()) {
       const shouldProceed = confirm('将要获取所有上市公司数据，确定要继续吗？');
@@ -329,7 +372,7 @@ const Page = () => {
       alert('请输入有效的股票代码！');
       return;
     }
-    const url = `/api/one?code=${codes.join(',')}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    const url = `/api/one?code=${codes.join(',')}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
     try {
       await apiGet(url);
       console.log('Batch Stock Data fetched:', url);
@@ -377,7 +420,11 @@ const Page = () => {
       alert('请输入有效的ETF代码！');
       return;
     }
-    if (!window.confirm(`强制全量重抓以下 K线数据？将删除旧数据后从 Eastmoney 全量拉取。\n${codes.join(', ')}`)) {
+    const sourceLabel = etfKlineSource === 'offline' ? '本地 TDX (vipdoc+gbbq)' : '东财网络';
+    const confirmMsg = etfKlineSource === 'offline'
+      ? `按本地通达信下载以下 ETF 的 K 线 (覆盖 Mongo 中旧数据):\n${codes.join(', ')}`
+      : `强制全量重抓以下 K线数据？将删除旧数据后从 Eastmoney 全量拉取。\n${codes.join(', ')}`;
+    if (!window.confirm(`[${sourceLabel}] ${confirmMsg}`)) {
       return;
     }
 
@@ -385,7 +432,13 @@ const Page = () => {
     let failCount = 0;
     for (const code of codes) {
       try {
-        await apiPost(`/api/kline/refresh?code=${code}`);
+        if (etfKlineSource === 'offline') {
+          // 离线: 本地 TDX → 落 Mongo (不删旧数据, 由后端 save 覆盖)
+          await apiGet(`/api/etf/kline?code=${code}&source=offline`);
+        } else {
+          // 在线: 强制全量重抓
+          await apiPost(`/api/kline/refresh?code=${code}`);
+        }
         successCount += 1;
       } catch (error) {
         if (error instanceof ApiError) {
@@ -400,7 +453,82 @@ const Page = () => {
     if (successCount > 0) {
       setEtfDataVersion((v) => v + 1);
     }
-    alert(`K线刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+    alert(`K线下载完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+  };
+
+  const handleFetchTdxVipdata = async () => {
+    if (!window.confirm("拉取通达信全量日线包到本地（约 525MB，1-3 分钟）？")) return;
+    try {
+      const start = await apiPost("/api/admin/tdx/fetch");
+      if (start?.state === "busy") {
+        alert(`已有任务在跑: ${start.active_task_id} (${start.current_state})`);
+        return;
+      }
+      if (!start?.task_id) {
+        alert("启动下载失败，请查看后端日志");
+        return;
+      }
+      setTdxFetch({ state: "started", task_id: start.task_id, progress: 0 });
+      const iv = setInterval(async () => {
+        try {
+          const s = await apiGet(`/api/admin/tdx/status?task_id=${start.task_id}`);
+          setTdxFetch(s);
+          if (["done", "failed", "skipped"].includes(s?.state)) {
+            clearInterval(iv);
+            if (s?.state === "done") {
+              // 成功: 给个轻量反馈 (不强制 alert, 让 UI 上的按钮文字提示即可)
+            }
+            if (s?.state === "failed") {
+              alert(`下载失败: ${s?.error || s?.message || "未知错误"}`);
+            }
+          }
+        } catch (err) {
+          clearInterval(iv);
+          alert(`查询进度失败: ${err?.message || err}`);
+        }
+      }, 1000);
+    } catch (err) {
+      alert(`启动失败: ${err?.message || err}`);
+    }
+  };
+
+  const handleSyncKlineFromTdx = async () => {
+    const code = (tdxSyncCode || "").trim();
+    if (code && !/^\d{6}$/.test(code)) {
+      alert("请输入 6 位股票代码 (如 000049), 或留空同步全市场");
+      return;
+    }
+    const isBatch = !code;
+    setTdxSync({ state: "syncing", code: code || "(全市场)" });
+    try {
+      const d = await apiPost("/api/kline/sync-from-tdx", { code });
+      if (isBatch || d?.batch) {
+        setTdxSync({
+          state: "done",
+          code: code || "(全市场)",
+          batch: true,
+          total: d?.total ?? 0,
+          synced: d?.synced ?? 0,
+          failedCount: Array.isArray(d?.failed) ? d.failed.length : 0,
+        });
+      } else {
+        setTdxSync({
+          state: "done",
+          code,
+          batch: false,
+          latest_date: d?.latest_date ?? null,
+          record_count: d?.record_count ?? 0,
+        });
+      }
+      // 给个轻量提示, 不强制 alert
+    } catch (error) {
+      const msg =
+        error instanceof ApiError
+          ? error.message
+          : error?.message || String(error);
+      setTdxSync({ state: "failed", code: code || "(全市场)", message: msg });
+      alert(`同步失败: ${msg}`);
+    }
   };
 
   const handleResumeStockData = async () => {
@@ -417,7 +545,7 @@ const Page = () => {
 
     // We'll use the first code as the keepon_code
     const keeponCode = codes[0];
-    const url = `/api/one?keepon_code=${keeponCode}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}`;
+    const url = `/api/one?keepon_code=${keeponCode}&crawl=${shouldCrawl === '是' ? 'true' : 'false'}&source=${klineSource}`;
 
     try {
       await apiGet(url);
@@ -657,6 +785,12 @@ const Page = () => {
       transition: 'background 0.15s',
     },
     buttonUnifiedHover: '#324d68',
+    buttonRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
     buttonGhost: {
       background: '#f8fafc',
       border: '1px solid rgba(148, 163, 184, 0.6)',
@@ -695,9 +829,9 @@ const Page = () => {
       position: 'relative',
     },
     sidebar: {
-      width: '260px',
-      minWidth: '220px',
-      maxWidth: '280px',
+      width: '300px',
+      minWidth: '260px',
+      maxWidth: '320px',
       display: 'flex',
       flexDirection: 'column',
       gap: '8px',
@@ -971,15 +1105,38 @@ const Page = () => {
             <div style={{ ...styles.card, ...styles.cardGoldCorner }}>
               <div style={styles.cardHeaderRow}>
                 <p style={styles.cardTitle}>ETF 数据</p>
-                <button
-                  type="button"
-                  onClick={() => setIsEtfCardOpen((prev) => !prev)}
-                  style={styles.cardToggle}
-                  aria-label={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
-                  title={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
-                >
-                  {isEtfCardOpen ? '▾' : '▸'}
-                </button>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: '#0f172a' }}>K线源</span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <input
+                      type="radio"
+                      name="etf-kline-source"
+                      value="online"
+                      checked={etfKlineSource === 'online'}
+                      onChange={handleEtfKlineSourceChange}
+                    />
+                    在线
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: etfKlineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: etfKlineSource === 'offline' ? 600 : 400 }}>
+                    <input
+                      type="radio"
+                      name="etf-kline-source"
+                      value="offline"
+                      checked={etfKlineSource === 'offline'}
+                      onChange={handleEtfKlineSourceChange}
+                    />
+                    本地
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsEtfCardOpen((prev) => !prev)}
+                    style={styles.cardToggle}
+                    aria-label={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
+                    title={isEtfCardOpen ? '收起ETF数据' : '展开ETF数据'}
+                  >
+                    {isEtfCardOpen ? '▾' : '▸'}
+                  </button>
+                </div>
               </div>
               <div
                 style={{
@@ -1070,7 +1227,7 @@ const Page = () => {
                     </label>
                   </div>
                   {/* 行4：4 个统一按钮（flex-wrap 自然分两行） */}
-                  <div style={styles.row}>
+                  <div style={styles.buttonRow}>
                     <button
                       onClick={handleFetchCustomData}
                       style={{ ...styles.buttonUnified, flex: '1 1 0' }}
@@ -1095,6 +1252,8 @@ const Page = () => {
                     >
                       列表1周
                     </button>
+                  </div>
+                  <div style={styles.buttonRow}>
                     <button
                       onClick={handleFetchSzseSync}
                       style={{ ...styles.buttonUnified, flex: '1 1 0' }}
@@ -1110,6 +1269,73 @@ const Page = () => {
                     >
                       导入本地JSON
                     </button>
+                  </div>
+                  <div style={styles.buttonRow}>
+                    <button
+                      type="button"
+                      onClick={handleFetchTdxVipdata}
+                      disabled={
+                        tdxFetch &&
+                        !["done", "failed", "skipped"].includes(tdxFetch.state)
+                      }
+                      style={{ ...styles.buttonUnified, flex: '1 1 0' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = styles.buttonUnifiedHover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = styles.buttonUnified.background)}
+                    >
+                      {tdxFetch?.state === "downloading" ? `下载中 ${tdxFetch.progress || 0}%` :
+                       tdxFetch?.state === "extracting"  ? `解压中 ${tdxFetch.progress || 0}%` :
+                       tdxFetch?.state === "checking"     ? "查询元信息..." :
+                       tdxFetch?.state === "started"      ? "准备..." :
+                       "拉取通达信日线包"}
+                    </button>
+                    {tdxFetch?.state === "done" && (
+                      <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                        [完成] {(tdxFetch.file_count || 0).toLocaleString()} 文件
+                      </span>
+                    )}
+                    {tdxFetch?.state === "failed" && (
+                      <span style={{ fontSize: 12, color: "#dc3545", whiteSpace: 'nowrap' }}>
+                        [失败]
+                      </span>
+                    )}
+                  </div>
+                  {/* 行: TDX 单股 K 线同步到 Mongo */}
+                  <div style={styles.row}>
+                    <input
+                      type="text"
+                      value={tdxSyncCode}
+                      onChange={(e) => setTdxSyncCode(e.target.value)}
+                      placeholder="股票代码 (如 000049)"
+                      maxLength={6}
+                      style={{ ...styles.input, flex: '1 1 0', minWidth: 0 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSyncKlineFromTdx}
+                      disabled={tdxSync?.state === "syncing"}
+                      style={styles.buttonUnified}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = styles.buttonUnifiedHover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = styles.buttonUnified.background)}
+                      title="从通达信本地 vipdoc/.day 读 K 线, 按日期合并覆盖到 MongoDB k_line"
+                    >
+                      {tdxSync?.state === "syncing" ? "同步中..." : "TDX→Mongo 同步"}
+                    </button>
+                    {tdxSync?.state === "done" && (
+                      tdxSync.batch ? (
+                        <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                          [全市场] synced {tdxSync.synced}/{tdxSync.total} · 失败 {tdxSync.failedCount}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                          [{tdxSync.code}] {tdxSync.latest_date} ({tdxSync.record_count} 条)
+                        </span>
+                      )
+                    )}
+                    {tdxSync?.state === "failed" && (
+                      <span style={{ fontSize: 12, color: "#dc3545", whiteSpace: 'nowrap' }}>
+                        [失败] {tdxSync.code}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1169,28 +1395,62 @@ const Page = () => {
                       下载常用票
                     </button>
                   </div>
-                  {/* 行3：是否爬取（radio） */}
-                  <div style={styles.row}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="radio"
-                        name="crawl-select"
-                        value="是"
-                        checked={shouldCrawl === '是'}
-                        onChange={handleCrawlChange}
-                      />
-                      抓东财
-                    </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input
-                        type="radio"
-                        name="crawl-select"
-                        value="否"
-                        checked={shouldCrawl === '否'}
-                        onChange={handleCrawlChange}
-                      />
-                      不抓
-                    </label>
+                  {/* 行3+4：财报 / K 线数据源 (CSS Grid 两列, label 自适应宽, 左对齐) */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'auto 1fr',
+                      rowGap: 6,
+                      columnGap: 6,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ color: '#5b6470', fontSize: 13 }}>财报:</span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="crawl-select"
+                          value="是"
+                          checked={shouldCrawl === '是'}
+                          onChange={handleCrawlChange}
+                        />
+                        抓东财
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="crawl-select"
+                          value="否"
+                          checked={shouldCrawl === '否'}
+                          onChange={handleCrawlChange}
+                        />
+                        不抓
+                      </label>
+                    </div>
+                    <span style={{ color: '#5b6470', fontSize: 13 }}>K 线:</span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="radio"
+                          name="kline-source"
+                          value="online"
+                          checked={klineSource === 'online'}
+                          onChange={handleKlineSourceChange}
+                        />
+                        在线 (Mongo)
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: klineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: klineSource === 'offline' ? 600 : 400 }}>
+                        <input
+                          type="radio"
+                          name="kline-source"
+                          value="offline"
+                          checked={klineSource === 'offline'}
+                          onChange={handleKlineSourceChange}
+                        />
+                        离线 (通达信)
+                      </label>
+                    </div>
                   </div>
                   {/* 行4：单股代码 input（独立一行） */}
                   <div style={styles.row}>

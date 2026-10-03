@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.clients.kline import SOURCE, FetchResult
 from app.clients.kline.types import KLineRow
 from app.models.entities import KLineDataEntity, KLineEntity
+from app.services.kline_pipeline import HybridFetchResult
 from app.services.kline_service import KLineService
 
 
@@ -78,13 +78,13 @@ def test_detect_window_end_alignment():
 
 
 def _make_service_with_mocks():
-    """构造 KLineService, repo + _aggregator 全部 mock."""
+    """构造 KLineService, repo + _pipeline 全部 mock."""
     svc = KLineService()
     svc.repo = MagicMock()
     svc.repo.find_by_id = AsyncMock(return_value=None)
     svc.repo.save = AsyncMock()
-    svc._aggregator = MagicMock()
-    svc._aggregator.fetch = AsyncMock()
+    svc._pipeline = MagicMock()
+    svc._pipeline.fetch_hybrid = AsyncMock()
     return svc
 
 
@@ -106,7 +106,7 @@ async def test_backfill_window_returns_none_when_market_none():
         start_date=_date(2025, 10, 1), end_date=_date(2025, 12, 31),
     )
     assert result is None
-    svc._aggregator.fetch.assert_not_awaited()
+    svc._pipeline.fetch_hybrid.assert_not_awaited()
     svc.repo.save.assert_not_awaited()
 
 
@@ -118,13 +118,15 @@ async def test_backfill_window_returns_none_when_end_before_start():
         start_date=_date(2025, 12, 31), end_date=_date(2025, 10, 1),
     )
     assert result is None
-    svc._aggregator.fetch.assert_not_awaited()
+    svc._pipeline.fetch_hybrid.assert_not_awaited()
 
 
 async def test_backfill_window_returns_none_when_aggregator_empty():
-    """_aggregator.fetch 返回 0 行 → 返 None, 不落库."""
+    """_pipeline.fetch_hybrid 返回 0 行 → 返 None, 不落库."""
     svc = _make_service_with_mocks()
-    svc._aggregator.fetch.return_value = FetchResult(rows=[], source=None, fell_back=True)
+    svc._pipeline.fetch_hybrid.return_value = HybridFetchResult(
+        rows=[], sources_used=[], tdx_rows_count=0, network_rows_count=0,
+    )
     result = await svc.backfill_kline_window(
         "300122", market=0,
         start_date=_date(2025, 10, 1), end_date=_date(2025, 12, 31),
@@ -134,11 +136,12 @@ async def test_backfill_window_returns_none_when_aggregator_empty():
 
 
 async def test_backfill_window_returns_none_when_sliced_empty():
-    """_aggregator 返回的行不在 [start, end] 区间 → 切片 0 条, 返 None."""
+    """_pipeline 返回的行不在 [start, end] 区间 → 切片 0 条, 返 None."""
     svc = _make_service_with_mocks()
-    svc._aggregator.fetch.return_value = FetchResult(
+    svc._pipeline.fetch_hybrid.return_value = HybridFetchResult(
         rows=[_tencent_row("2026-01-15"), _tencent_row("2026-02-20")],
-        source=SOURCE.TENCENT, fell_back=False,
+        sources_used=["sina"],
+        tdx_rows_count=0, network_rows_count=2,
     )
     result = await svc.backfill_kline_window(
         "300122", market=0,
@@ -151,7 +154,7 @@ async def test_backfill_window_returns_none_when_sliced_empty():
 async def test_backfill_window_slices_window_and_saves():
     """正常路径: 切片 [start, end] → 与现有 klines 合并 → 落库."""
     svc = _make_service_with_mocks()
-    svc._aggregator.fetch.return_value = FetchResult(
+    svc._pipeline.fetch_hybrid.return_value = HybridFetchResult(
         rows=[
             _tencent_row("2025-09-30"),
             _tencent_row("2025-10-15"),
@@ -159,7 +162,8 @@ async def test_backfill_window_slices_window_and_saves():
             _tencent_row("2025-12-15"),
             _tencent_row("2026-01-15"),
         ],
-        source=SOURCE.TENCENT, fell_back=False,
+        sources_used=["sina"],
+        tdx_rows_count=0, network_rows_count=5,
     )
     svc.repo.find_by_id.return_value = KLineEntity(
         code="300122", name="智飞生物",
@@ -172,7 +176,7 @@ async def test_backfill_window_slices_window_and_saves():
         name="智飞生物",
     )
 
-    call_args = svc._aggregator.fetch.await_args
+    call_args = svc._pipeline.fetch_hybrid.await_args
     assert call_args is not None
     symbol_arg = call_args.args[0] if call_args.args else call_args.kwargs.get("symbol")
     assert symbol_arg == "sz300122"

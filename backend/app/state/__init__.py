@@ -1,0 +1,1 @@
+"""App-wide in-memory state containers (singleton-style, NOT persisted)."""

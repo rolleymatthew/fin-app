@@ -12,6 +12,30 @@ pip install -e .
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
+## K 线多源：hybrid pipeline（TDX 优先 + 网络补 gap）
+
+**架构**：`KLinePipeline` 编排器 4 阶段：TDX 探测 → 网络补 gap → 纯网络兜底 → 合并切片。
+`source=online`（默认）走 hybrid；`source=offline` 走纯 TDX（既有行为保留）。
+
+**TDX-first**：本地通达信 vipdoc + gbbq 覆盖历史（无网络、零频率限制、字段完整）。
+`TdxAdapter` 复用 `app/services/tdx_offline/fetch_local_day`，不重写。
+
+**网络补 gap**：TDX 的 `max_date` 距今天数 = gap，用网络链补最近 gap+5 天。
+网络链顺序默认 `sina,tencent,eastmoney`（env `FIN_KLINE_NETWORK_CHAIN` 覆盖），先轻后全。
+
+**TDX 不可用时**：env `FIN_KLINE_PRIMARY`（默认 `tencent`）+ `FIN_KLINE_FALLBACKS`（默认 `eastmoney,sina`）
+驱动纯网络兜底链——与改造前 online 行为一致，零回归。
+
+**TDX 不必天天下载**：`tdx_daily_fetcher` 每包 525MB，hybrid 自动用网络补最近 gap。
+
+**env 总览**：
+- `FIN_KLINE_PRIMARY`（默认 `tencent`）— TDX 不可用时纯网络主源
+- `FIN_KLINE_FALLBACKS`（默认 `eastmoney,sina`）— 同上回退
+- `FIN_KLINE_NETWORK_CHAIN`（默认 `sina,tencent,eastmoney`）— TDX gap 补抓网络链
+- `FIN_TDX_HOME`（默认 `D:\stock\data`）— TDX 主目录
+
+**详见**：`docs/superpowers/specs/2026-09-29-kline-hybrid-pipeline-design.md`
+
 ## sec_code 同步
 
 服务启动时不自动同步 `sec_code`。手动触发方式：
