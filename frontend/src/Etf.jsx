@@ -39,6 +39,11 @@ const Page = () => {
   const [tdxFetch, setTdxFetch] = useState(null);
   // shape: {state: 'started'|'checking'|'downloading'|'extracting'|'done'|'failed'|'skipped'|'busy', task_id, progress, message}
   // 股票卡片专属 K 线数据源
+
+  // TDX → Mongo 单股 K 线同步 (对应 POST /api/kline/sync-from-tdx)
+  const [tdxSync, setTdxSync] = useState(null);
+  // shape: {state: 'idle'|'syncing'|'done'|'failed', code, latest_date, record_count, message}
+  const [tdxSyncCode, setTdxSyncCode] = useState('');
   const [klineSource, setKlineSource] = useState(() => {
     try {
       return localStorage.getItem('klineSource') || 'online';
@@ -484,6 +489,45 @@ const Page = () => {
       }, 1000);
     } catch (err) {
       alert(`启动失败: ${err?.message || err}`);
+    }
+  };
+
+  const handleSyncKlineFromTdx = async () => {
+    const code = (tdxSyncCode || "").trim();
+    if (code && !/^\d{6}$/.test(code)) {
+      alert("请输入 6 位股票代码 (如 000049), 或留空同步全市场");
+      return;
+    }
+    const isBatch = !code;
+    setTdxSync({ state: "syncing", code: code || "(全市场)" });
+    try {
+      const d = await apiPost("/api/kline/sync-from-tdx", { code });
+      if (isBatch || d?.batch) {
+        setTdxSync({
+          state: "done",
+          code: code || "(全市场)",
+          batch: true,
+          total: d?.total ?? 0,
+          synced: d?.synced ?? 0,
+          failedCount: Array.isArray(d?.failed) ? d.failed.length : 0,
+        });
+      } else {
+        setTdxSync({
+          state: "done",
+          code,
+          batch: false,
+          latest_date: d?.latest_date ?? null,
+          record_count: d?.record_count ?? 0,
+        });
+      }
+      // 给个轻量提示, 不强制 alert
+    } catch (error) {
+      const msg =
+        error instanceof ApiError
+          ? error.message
+          : error?.message || String(error);
+      setTdxSync({ state: "failed", code: code || "(全市场)", message: msg });
+      alert(`同步失败: ${msg}`);
     }
   };
 
@@ -1255,6 +1299,44 @@ const Page = () => {
                       </span>
                     )}
                   </div>
+                  {/* 行: TDX 单股 K 线同步到 Mongo */}
+                  <div style={styles.row}>
+                    <input
+                      type="text"
+                      value={tdxSyncCode}
+                      onChange={(e) => setTdxSyncCode(e.target.value)}
+                      placeholder="股票代码 (如 000049)"
+                      maxLength={6}
+                      style={{ ...styles.input, flex: '1 1 0', minWidth: 0 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSyncKlineFromTdx}
+                      disabled={tdxSync?.state === "syncing"}
+                      style={styles.buttonUnified}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = styles.buttonUnifiedHover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = styles.buttonUnified.background)}
+                      title="从通达信本地 vipdoc/.day 读 K 线, 按日期合并覆盖到 MongoDB k_line"
+                    >
+                      {tdxSync?.state === "syncing" ? "同步中..." : "TDX→Mongo 同步"}
+                    </button>
+                    {tdxSync?.state === "done" && (
+                      tdxSync.batch ? (
+                        <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                          [全市场] synced {tdxSync.synced}/{tdxSync.total} · 失败 {tdxSync.failedCount}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "#28a745", whiteSpace: 'nowrap' }}>
+                          [{tdxSync.code}] {tdxSync.latest_date} ({tdxSync.record_count} 条)
+                        </span>
+                      )
+                    )}
+                    {tdxSync?.state === "failed" && (
+                      <span style={{ fontSize: 12, color: "#dc3545", whiteSpace: 'nowrap' }}>
+                        [失败] {tdxSync.code}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1313,8 +1395,9 @@ const Page = () => {
                       下载常用票
                     </button>
                   </div>
-                  {/* 行3：是否爬取（radio） */}
+                  {/* 行3：财务三表数据源 (抓东财 / 不抓) */}
                   <div style={styles.row}>
+                    <span style={{ ...styles.label, minWidth: 84 }}>财务三表:</span>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
                         type="radio"
@@ -1335,8 +1418,10 @@ const Page = () => {
                       />
                       不抓
                     </label>
-                    <span style={{ width: 1, height: 18, background: 'rgba(148,163,184,0.4)', margin: '0 6px' }} />
-                    <span style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap' }}>K线</span>
+                  </div>
+                  {/* 行4：K 线数据源 (在线 / 离线) */}
+                  <div style={styles.row}>
+                    <span style={{ ...styles.label, minWidth: 84 }}>K 线:</span>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input
                         type="radio"
@@ -1345,7 +1430,7 @@ const Page = () => {
                         checked={klineSource === 'online'}
                         onChange={handleKlineSourceChange}
                       />
-                      在线
+                      在线 (Mongo)
                     </label>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: klineSource === 'offline' ? '#047857' : '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: klineSource === 'offline' ? 600 : 400 }}>
                       <input
@@ -1355,7 +1440,7 @@ const Page = () => {
                         checked={klineSource === 'offline'}
                         onChange={handleKlineSourceChange}
                       />
-                      离线
+                      离线 (通达信)
                     </label>
                   </div>
                   {/* 行4：单股代码 input（独立一行） */}
