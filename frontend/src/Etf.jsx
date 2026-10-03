@@ -1395,17 +1395,17 @@ const Page = () => {
                       下载常用票
                     </button>
                   </div>
-                  {/* 行3+4：财报 / K 线数据源 (CSS Grid 两列, label 锁列1, radios 锁列2) */}
+                  {/* 行3+4：财报 / K 线数据源 (CSS Grid 两列, label 自适应宽, 左对齐) */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '70px 1fr',
+                      gridTemplateColumns: 'auto 1fr',
                       rowGap: 6,
-                      columnGap: 8,
+                      columnGap: 6,
                       alignItems: 'center',
                     }}
                   >
-                    <span style={styles.label}>财报:</span>
+                    <span style={{ color: '#5b6470', fontSize: 13 }}>财报:</span>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         <input
@@ -1428,7 +1428,7 @@ const Page = () => {
                         不抓
                       </label>
                     </div>
-                    <span style={styles.label}>K 线:</span>
+                    <span style={{ color: '#5b6470', fontSize: 13 }}>K 线:</span>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#0f172a', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         <input
