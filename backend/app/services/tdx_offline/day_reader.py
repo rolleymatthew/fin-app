@@ -173,9 +173,11 @@ class TdxDailyBarReader:
                 vol_lots = int(vol * self._vol_coeff)
             volumes.append(vol_lots)
             # amt 自洽校验: amount_raw 与 close × shares 应在 5× 内
-            # 个别 .day 文件偶发 raw ≈ expected × 100 (实测: 510050 的 13 个日期),
-            # 视为通达信写入时把 amount 单位多乘了 100 倍的脏数据,
-            # 启发式自动 ÷100 / ×100 修正, 不打 warn; 其它偏离仍 warn + 替代.
+            # 个别 .day 文件偶发脏数据:
+            #   - raw ≈ expected × 100 (实测: 510050 的 13 个日期) — amount 单位多 ×100
+            #   - raw ≈ expected × 5   (实测: 1992-1995 老数据, ratio 集中在 5.00~5.27) —
+            #     amount 单位多 ×5
+            # 启发式自动 ÷100 / ×5 / ×100 修正, 不打 warn; 其它偏离仍 warn + 替代.
             shares = vol_lots * 100
             if shares > 0 and amount > 0:
                 expected_amt = close_yuan * shares
@@ -183,6 +185,8 @@ class TdxDailyBarReader:
                 amount_yuan = amount
                 if raw_ratio > 50 and raw_ratio < 200:
                     amount_yuan = amount / 100.0
+                elif raw_ratio > 4.5 and raw_ratio < 5.5:
+                    amount_yuan = amount / 5.0
                 elif raw_ratio > 0.005 and raw_ratio < 0.02:
                     amount_yuan = amount * 100.0
                 ratio = amount_yuan / expected_amt

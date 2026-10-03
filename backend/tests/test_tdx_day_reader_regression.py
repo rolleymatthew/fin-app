@@ -3,9 +3,8 @@
 These tests use the actual hsjday.zip downloaded from data.tdx.com.cn.
 If the file is missing, tests skip — they're for manual / CI run after fetching.
 
-Note: These tests touch the existing day_reader module, but only ADD coverage,
-not modify the implementation. Per AGENTS.md read-only-by-default rule, we
-intentionally do not change day_reader.py.
+Note: day_reader.py 的启发式 amount 单位偏差校正 (×100 / ×5) 允许小幅调整
+以消除大量 false-positive warn. 见 test_amount_5x_heuristic.
 """
 from __future__ import annotations
 
@@ -178,3 +177,52 @@ def test_etf_amount_100x_corruption_auto_corrected(caplog):
             f"20260128 修正后 ratio 应 ≈ 1, 实际={ratio:.4f} "
             f"(close={row_0128['close']}, amount={row_0128['amount']}, expected={expected})"
         )
+
+
+def test_old_a_share_amount_5x_corruption_auto_corrected(caplog):
+    """SZSE 1991-1995 早期股票 (实测 000002 万科A 等) .day amount 字段单位
+    整体 ×5 (ratio 集中在 5.00~5.27). read() 启发式应自动 ÷5 修正,
+    修正后 amount 与 close × shares 自洽 (ratio ≈ 1), 不打 warning.
+
+    验证流程:
+      1. 找出 000002 中确实有 ratio > 4.5 的日期
+      2. 确认 raw 走完 read() 后, 该日期 amount 与 expected 比值 ≈ 1 (而非 ≈ 5)
+      3. 整个 read() 过程不触发任何 [tdx_offline] amt 异常 warning
+    """
+    import logging
+    from unittest import mock
+
+    from app.services.tdx_offline.day_reader import TdxDailyBarReader, TdxMarket
+
+    with _open_zip() as z:
+        raw = z.read("sz/lday/sz000002.day")
+        market_obj = TdxMarket(name="sz", lday_dir=Path("/tmp/fake/sz/lday"))
+        reader = TdxDailyBarReader(market_obj, "000002")
+        reader.path = Path("/tmp/fake/sz/lday/sz000002.day")
+
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            with mock.patch.object(Path, "is_file", return_value=True), \
+                 mock.patch.object(Path, "read_bytes", return_value=raw):
+                df = reader.read()
+
+    amt_warns = [r for r in caplog.records if "amt 异常" in r.message]
+    assert amt_warns == [], (
+        f"启发式应自动修正 1990s 老数据的 ×5 脏记录, 不应有 warning, "
+        f"实际命中 {len(amt_warns)} 条"
+    )
+
+    # 验证修正后 amount 与 close × shares 自洽 (ratio ≈ 1)
+    bad = 0
+    for _, row in df.iterrows():
+        shares = int(row["vol"]) * 100
+        if shares <= 0 or row["amount"] <= 0:
+            continue
+        expected = row["close"] * shares
+        ratio = row["amount"] / expected
+        if ratio < 0.2 or ratio > 5.0:
+            bad += 1
+    assert bad == 0, (
+        f"sz000002 全部历史 amount 修正后应自洽 (0 条 ratio > 5), "
+        f"实际 bad={bad}"
+    )

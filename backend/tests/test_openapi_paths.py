@@ -31,6 +31,7 @@ EXPECTED_PATHS = {
     "/api/etf/kline",
     "/api/kline/get",
     "/api/kline/refresh",
+    "/api/kline/sync-from-tdx",  # TDX→Mongo 同步 (单只/批量全市场)
     # /api/* stock 自身（拆分后 stock.py 只剩这些）
     "/api/one",
     "/api/hk/one",
