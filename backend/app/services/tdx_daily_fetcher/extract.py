@@ -47,7 +47,22 @@ def atomic_extract_zip(zip_path: Path, target_dir: Path) -> int:
             bad = z.testzip()
             if bad:
                 raise ExtractError(f"zip 损坏: {bad}")
-            z.extractall(tmp_dir)
+            # 兜底: 通达信 zip 把路径分隔符写成 '\' (Windows 风格) 而非 ZIP 标准的 '/'.
+            # Python zipfile._sanitize_filename 仅在 os.sep='\\' (即 Windows) 时把
+            # '\' 转 '/'; Docker 容器是 Linux, os.sep='/', 不转换, extractall 会把
+            # 'bj\lday\bj000001.day' 当成单文件名, bind mount 到 NTFS 时驱动层把
+            # '\' 替换成 U+F05C 等私有区字符, 整盘 12449 个文件平铺带乱码.
+            #
+            # 注意: 必须用 z.extractall(path, members=z.infolist()) 而非裸 z.extractall(path).
+            # 后者默认从 self.namelist() 拿字符串名, 内部 _extract_member 会调
+            # self.getinfo(name), 但 NameToInfo 的 key 是 zip 原始的 '\' 分隔名 (没跟着
+            # patch 改), 改成 '/' 后 getinfo 会 KeyError: "There is no item named ..."
+            # 显式传 ZipInfo 列表让 _extract_member 走 isinstance(member, ZipInfo) 分支
+            # 跳过 getinfo, 直接用我们 patch 过的 info.filename.
+            for info in z.infolist():
+                if "\\" in info.filename:
+                    info.filename = info.filename.replace("\\", "/")
+            z.extractall(tmp_dir, members=z.infolist())
         # 整个 vipdoc/ 是 zip 内的顶级目录; tmp_dir 已经是 vipdoc 内容
         if final_dir.exists():
             shutil.rmtree(final_dir, ignore_errors=True)
