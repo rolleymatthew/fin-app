@@ -829,9 +829,9 @@ const Page = () => {
       position: 'relative',
     },
     sidebar: {
-      width: '260px',
-      minWidth: '220px',
-      maxWidth: '280px',
+      width: '300px',
+      minWidth: '260px',
+      maxWidth: '320px',
       display: 'flex',
       flexDirection: 'column',
       gap: '8px',
