@@ -189,6 +189,5 @@ class KLinePipeline:
         await asyncio.gather(
             self._gap_chain.aclose(),
             self._pure_chain.aclose(),
-            self._tdx_adapter.aclose(),
             return_exceptions=True,
         )
