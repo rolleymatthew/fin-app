@@ -7,9 +7,11 @@
 """
 from __future__ import annotations
 
+import asyncio
 from functools import lru_cache
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
 
 from app.constants import spider
 from app.models.result import ResultVO
@@ -21,6 +23,10 @@ from app.services.seccode_service import SecCodeService
 router = APIRouter()
 
 
+# 全市场同步并发度 (避免一次性 5000+ 同时打 TDX 本地 IO)
+_BATCH_SYNC_CONCURRENCY = 20
+
+
 @lru_cache
 def _services():
     return (
@@ -28,6 +34,13 @@ def _services():
         KLineService(),
         SecCodeService(),
         FinanceService(),
+    )
+
+
+class SyncFromTdxRequest(BaseModel):
+    code: str = Field(
+        default="",
+        description="6 位股票代码 (如 '000049'), 空字符串 = 全市场批量同步",
     )
 
 
@@ -141,3 +154,101 @@ async def refresh_kline(
             "count": len(entity.klines) if entity.klines else 0,
         }
     )
+
+
+@router.post("/kline/sync-from-tdx")
+async def sync_from_tdx(payload: SyncFromTdxRequest):
+    """把通达信本地 K 线按日期合并覆盖到 MongoDB k_line.
+
+    流程:
+      1. 读 TDX 本地 (.day, 含 qfq 复权)
+      2. 读 Mongo k_line 现有
+      3. 比最新日期, TDX 更新则合并覆盖 (TDX 胜出, 保留 Mongo 独有字段)
+      4. 返 Mongo (现在保证新鲜, 含 TDX 最新日期)
+
+    调用方按需触发 (例如 /one 跑前批量调一次). 不修改任何已有读路径.
+
+    Request body: {"code": "000049"} 或 {"code": ""} (后者=全市场)
+    Response ok (单只): {code, latest_date, record_count}
+    Response ok (批量): {batch: true, total, synced, up_to_date, failed: [...]}
+    """
+    _, kline_service, sec_code_service, _ = _services()
+
+    code = (payload.code or "").strip()
+
+    # 空 code → 全市场批量同步
+    if not code:
+        all_entities = await sec_code_service.repo.find_all()
+        targets = [e for e in all_entities if e.securityCode]
+        print(
+            f"[kline/api] POST /api/kline/sync-from-tdx batch "
+            f"total_targets={len(targets)} concurrency={_BATCH_SYNC_CONCURRENCY}",
+            flush=True,
+        )
+
+        synced_count = 0
+        failed: list[dict] = []
+
+        async def _one(entity) -> None:
+            nonlocal synced_count
+            try:
+                result = await kline_service.sync_mongo_with_tdx(
+                    entity.securityCode, entity,
+                )
+                if result is not None:
+                    synced_count += 1
+            except Exception as exc:
+                failed.append(
+                    {"code": entity.securityCode, "error": f"{type(exc).__name__}: {exc}"}
+                )
+
+        sem = asyncio.Semaphore(_BATCH_SYNC_CONCURRENCY)
+
+        async def _bounded(entity) -> None:
+            async with sem:
+                await _one(entity)
+
+        await asyncio.gather(*[_bounded(e) for e in targets])
+
+        print(
+            f"[kline/api] /kline/sync-from-tdx batch done "
+            f"total={len(targets)} synced={synced_count} failed={len(failed)}",
+            flush=True,
+        )
+        return ResultVO.ok(
+            {
+                "batch": True,
+                "total": len(targets),
+                "synced": synced_count,
+                "failed": failed,
+            }
+        ).model_dump()
+
+    # 单只同步
+    sec_code_entity = await sec_code_service.sec_code_entity_by_id(code)
+    if sec_code_entity is None:
+        return ResultVO.fail(
+            code=404, message=f"sec_code 未找到: {code}"
+        ).model_dump()
+
+    print(
+        f"[kline/api] POST /api/kline/sync-from-tdx code={code}",
+        flush=True,
+    )
+    synced = await kline_service.sync_mongo_with_tdx(code, sec_code_entity)
+    if synced is None:
+        return ResultVO.fail(
+            code=1,
+            message=f"TDX 本地无 {code} 数据 (检查通达信 .day 文件)",
+        ).model_dump()
+
+    latest_date = max(
+        (k.date for k in synced.klines if k.date), default=None
+    )
+    return ResultVO.ok(
+        {
+            "code": code,
+            "latest_date": latest_date,
+            "record_count": len(synced.klines),
+        }
+    ).model_dump()

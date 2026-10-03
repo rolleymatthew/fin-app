@@ -99,6 +99,86 @@ class KLineService:
         """
         await self._pipeline.aclose()
 
+    async def sync_mongo_with_tdx(
+        self,
+        code: str,
+        sec_code_entity=None,
+    ) -> "KLineEntity | None":
+        """把通达信本地 K 线按日期合并覆盖到 MongoDB k_line, 然后返 Mongo.
+
+        流程:
+        1. 读 TDX 本地 (vipdoc .day, 含 qfq 复权)
+        2. 读 MongoDB k_line 现有数据
+        3. 比最新日期:
+           - TDX 更新 (或 Mongo 不存在) → 合并覆盖 (TDX 同日期胜出)
+           - Mongo 已更新或相同 → 不动
+        4. 返 Mongo (现在保证新鲜)
+
+        Args:
+            code: 6 位股票代码
+            sec_code_entity: 可选, 用于回填 name (fallback to securityNameAbbr)
+
+        Returns:
+            已同步的 KLineEntity (永远包含最新数据) 或 None (TDX 无该 code)
+        """
+        # 1. TDX 本地
+        try:
+            tdx_entity = await self.kline_by_sec_code_offline(code)
+        except Exception as exc:
+            print(
+                f"[kline/sync-tdx] {code} TDX read failed: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            return None
+        if not tdx_entity or not tdx_entity.klines:
+            print(f"[kline/sync-tdx] {code} TDX empty, skip", flush=True)
+            return None
+
+        # 2. Mongo 当前
+        mongo_entity = await self.repo.find_by_id(code)
+        mongo_klines = mongo_entity.klines if mongo_entity else []
+
+        # 3. 比日期
+        tdx_latest = max(
+            (k.date for k in tdx_entity.klines if k.date), default=None
+        )
+        mongo_latest = max(
+            (k.date for k in mongo_klines if k.date), default=None
+        )
+
+        if mongo_latest and tdx_latest and tdx_latest <= mongo_latest:
+            # Mongo 已新鲜, 不动
+            print(
+                f"[kline/sync-tdx] {code} Mongo up-to-date "
+                f"({mongo_latest} >= {tdx_latest})",
+                flush=True,
+            )
+        else:
+            # TDX 更新 (或 Mongo 不存在) → 合并覆盖
+            name = None
+            if mongo_entity and mongo_entity.name:
+                name = mongo_entity.name
+            elif sec_code_entity is not None:
+                name = getattr(sec_code_entity, "securityNameAbbr", None)
+            if not name:
+                name = code
+
+            merged = self._merge_klines(
+                mongo_klines, tdx_entity.klines, prefer="new"
+            )
+            new_entity = KLineEntity(code=code, name=name, klines=merged)
+            await self.save_mongodb(new_entity)
+            print(
+                f"[kline/sync-tdx] {code} synced Mongo "
+                f"{mongo_latest or '∅'} -> {tdx_latest} "
+                f"(merged {len(merged)} rows)",
+                flush=True,
+            )
+
+        # 4. 返 Mongo (现在保证新鲜)
+        return await self.repo.find_by_id(code)
+
     def market_code(self, secucode: str) -> int | None:
         return spider.market(secucode)
 
